@@ -5,6 +5,9 @@ IMPORT Strings, Out,
 CONST
   ErrmessSize = 4096;
 
+VAR
+  currentLocalProjectFile: ARRAY 256 OF CHAR;
+
 PROCEDURE ToLower(VAR stringVar: ARRAY OF CHAR);
 VAR
   i: INTEGER;
@@ -398,5 +401,146 @@ BEGIN
   END;  (* End of IF jsonstr # NIL *)
   RETURN 0;
 END getDeps;
+
+PROCEDURE setLocalProjectFile*(VAR filename: ARRAY OF CHAR);
+BEGIN
+  COPY(filename, currentLocalProjectFile);
+END setLocalProjectFile;
+
+PROCEDURE getBuildInfoFromFile*(VAR d: vpkdepTree.Tdep; VAR k, v: StringList.TStringList; VAR filename: ARRAY OF CHAR): BOOLEAN;
+VAR
+  jsonstr, errstr: strUtils.pstring;
+  tree, buildValue, command, file: Json.Value;
+  rootObj, buildStep: Json.Obj;
+  buildArray: Json.Arr;
+  cm, fl, bl, cmLower, flLower: Json.jString;
+  b: BOOLEAN;
+BEGIN
+  k := NIL; v := NIL;
+  b := FALSE;
+  jsonstr := NIL;
+
+  (* Read from specified file instead of package tree *)
+  vpkStorage.fileToString(filename, jsonstr);
+
+  IF jsonstr # NIL THEN
+    NEW(errstr, ErrmessSize);
+    b := Json.Parse(tree, jsonstr^, errstr^);
+    IF b THEN
+      IF tree IS Json.Obj THEN
+        rootObj := tree(Json.Obj);
+        NEW(bl, Strings.Length(vpkSettings.bldType) + 1); (* +1 for 0X *)
+        COPY(vpkSettings.bldType, bl^);
+        IF Json.ObjSelect(buildValue, rootObj, bl) THEN
+          IF buildValue IS Json.Arr THEN
+            buildArray := buildValue(Json.Arr);
+            WHILE buildArray # NIL DO
+              buildStep := buildArray.value(Json.Obj);
+              NEW(cm, Strings.Length(vpkSettings.bldCommand) + 1); (* +1 for 0X *)
+              NEW(fl, Strings.Length(vpkSettings.bldFile) + 1);    (* +1 for 0X *)
+              COPY(vpkSettings.bldCommand, cm^);
+              COPY(vpkSettings.bldFile, fl^);
+
+              (* Handle build steps (same logic as original getBuildInfo) *)
+              IF Json.ObjSelect(command, buildStep, cm) & Json.ObjSelect(file, buildStep, fl) THEN
+                IF (command IS Json.Str) & (file IS Json.Str) THEN
+                  IF k = NIL THEN k := StringList.Create() END;
+                  IF v = NIL THEN v := StringList.Create() END;
+                  k.AppendString(k, command(Json.Str).str^);
+                  v.AppendString(v, file(Json.Str).str^);
+                ELSE
+                  Out.String("command and file must be strings"); Out.Ln;
+                  HALT(5);
+                END;
+              ELSE
+                Out.String("Failed to select 'command' or 'file' from build step"); Out.Ln;
+              END;
+              buildArray := buildArray.next;
+            END;
+          ELSE
+            Out.String("Build section is not an array."); Out.Ln;
+          END;
+        ELSE
+          Out.String("Build section not found."); Out.Ln;
+        END;
+      ELSE
+        Out.String("JSON root is not an object."); Out.Ln;
+      END;
+    ELSE
+      Out.String("JSON parsing failed: "); Out.String(errstr^); Out.Ln;
+    END;
+  ELSE
+    Out.String("No JSON string provided."); Out.Ln;
+  END;
+  RETURN b;
+END getBuildInfoFromFile;
+
+PROCEDURE getDepsFromFile*(VAR d: vpkdepTree.Tdep; VAR depstrlist: StringList.TStringList): LONGINT;
+VAR
+  jsonstr, errstr: strUtils.pstring;
+  tree, depsValue, singleDep: Json.Value;
+  rootObj, depObj: Json.Obj;
+  depName, depVersion: Json.jString;
+  foundDepSection: BOOLEAN;
+  filename: ARRAY 128 OF CHAR;
+BEGIN
+  depstrlist := NIL;
+  jsonstr := NIL;
+
+  (* For local projects, read from current directory's vipak.json *)
+  IF currentLocalProjectFile = "" THEN
+    COPY("vipak.json", filename);
+  ELSE
+    COPY(currentLocalProjectFile, filename);
+  END;
+  vpkStorage.fileToString(filename, jsonstr);
+
+  IF jsonstr # NIL THEN
+    NEW(errstr, ErrmessSize);
+    IF Json.Parse(tree, jsonstr^, errstr^) THEN
+      IF tree IS Json.Obj THEN
+        rootObj := tree(Json.Obj);
+        (* searching for dependencies section *)
+        foundDepSection := FALSE;
+        REPEAT
+          IF rootObj.name^ = vpkSettings.depTypKey THEN
+            foundDepSection := TRUE;
+          END;
+          IF ~foundDepSection THEN rootObj := rootObj.next END
+        UNTIL (rootObj = NIL) OR foundDepSection;
+        IF foundDepSection THEN
+          WHILE rootObj # NIL DO
+            depsValue := rootObj.value;
+            IF depsValue # NIL THEN
+              IF depsValue IS Json.Obj THEN
+                singleDep := depsValue(Json.Obj);
+                WHILE singleDep # NIL DO
+                  IF singleDep IS Json.Obj THEN
+                    depObj := singleDep(Json.Obj);
+                    depName := depObj.name;
+                    depVersion := depObj.value(Json.Str).str;
+                    IF depstrlist = NIL THEN depstrlist := StringList.Create() END;
+                    depstrlist.AppendString(depstrlist, depName^);
+                    singleDep := depObj.next;  (* Move to the next dependency *)
+                  END;
+                END;  (* End of inner WHILE loop for dependencies *)
+                RETURN depstrlist.Count;
+              END;  (* End of IF depsValue IS Json.Obj *)
+            END;
+            rootObj := rootObj.next;  (* Move to the next JSON object *)
+          END;  (* End of WHILE rootObj # NIL loop *)
+        ELSE
+          RETURN 0; (* found no dependencies *)
+        END;
+      END;  (* End of IF tree IS Json.Obj *)
+    ELSE
+      Out.String("JSON parsing failed: "); Out.String(errstr^); Out.Ln;
+    END;  (* End of IF Json.Parse *)
+  ELSE
+    Out.String("local project file not found: "); Out.String(filename); Out.Ln;
+    RETURN -1; (* No such JSON file found *)
+  END;  (* End of IF jsonstr # NIL *)
+  RETURN 0;
+END getDepsFromFile;
 
 END vpkJsonDepRetriever.
