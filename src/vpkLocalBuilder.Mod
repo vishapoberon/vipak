@@ -22,80 +22,6 @@ TYPE
     hasBuild: BOOLEAN;
   END;
 
-PROCEDURE getBuildInfoFromLocalFile(VAR projectFile: ARRAY OF CHAR; VAR k, v: StringList.TStringList): BOOLEAN;
-VAR
-  jsonstr, errstr: strUtils.pstring;
-  tree, buildValue, command, file: Json.Value;
-  rootObj, buildStep: Json.Obj;
-  buildArray: Json.Arr;
-  cm, fl, bl: Json.jString;
-  b: BOOLEAN;
-BEGIN
-  k := NIL; v := NIL;
-  b := FALSE;
-  jsonstr := NIL;
-  
-  (* Read from specified file *)
-  vpkStorage.fileToString(projectFile, jsonstr);
-  
-  IF jsonstr # NIL THEN
-    NEW(errstr, ErrmessSize);
-    b := Json.Parse(tree, jsonstr^, errstr^);
-    IF b THEN
-      IF tree IS Json.Obj THEN
-        rootObj := tree(Json.Obj);
-        NEW(bl, Strings.Length(vpkSettings.bldType) + 1);
-        COPY(vpkSettings.bldType, bl^);
-        IF Json.ObjSelect(buildValue, rootObj, bl) THEN
-          IF buildValue IS Json.Arr THEN
-            buildArray := buildValue(Json.Arr);
-            WHILE buildArray # NIL DO
-              (* buildArray.value should contain the build step object *)
-              IF buildArray.value IS Json.Obj THEN
-                buildStep := buildArray.value(Json.Obj);
-                NEW(cm, Strings.Length(vpkSettings.bldCommand) + 1);
-                NEW(fl, Strings.Length(vpkSettings.bldFile) + 1);
-                COPY(vpkSettings.bldCommand, cm^);
-                COPY(vpkSettings.bldFile, fl^);
-                
-                (* Look for "command" and "file" keys in the build step object *)
-                IF Json.ObjSelect(command, buildStep, cm) & Json.ObjSelect(file, buildStep, fl) THEN
-                  IF (command IS Json.Str) & (file IS Json.Str) THEN
-                    IF k = NIL THEN k := StringList.Create() END;
-                    IF v = NIL THEN v := StringList.Create() END;
-                    k.AppendString(k, command(Json.Str).str^);
-                    v.AppendString(v, file(Json.Str).str^);
-                    Out.String("Found build step: "); Out.String(command(Json.Str).str^); 
-                    Out.String(" "); Out.String(file(Json.Str).str^); Out.Ln;
-                  ELSE
-                    Out.String("command and file must be strings"); Out.Ln;
-                  END;
-                ELSE
-                  Out.String("Build step missing 'command' or 'file' fields"); Out.Ln;
-                END;
-              ELSE
-                Out.String("Build array element is not an object"); Out.Ln;
-              END;
-              buildArray := buildArray.next;
-            END;
-          ELSE
-            Out.String("Build section is not an array."); Out.Ln;
-          END;
-        ELSE
-          Out.String("Build section not found."); Out.Ln;
-        END;
-      ELSE
-        Out.String("JSON root is not an object."); Out.Ln;
-      END;
-    ELSE
-      Out.String("JSON parsing failed: "); Out.String(errstr^); Out.Ln;
-    END;
-  ELSE
-    Out.String("No JSON string provided."); Out.Ln;
-  END;
-  RETURN (k # NIL) & (v # NIL) & (k.Count > 0);
-END getBuildInfoFromLocalFile;
-
 PROCEDURE createTemplateModule(VAR projectName: ARRAY OF CHAR);
 VAR
   filename: ARRAY 80 OF CHAR;
@@ -206,9 +132,9 @@ BEGIN
   Strings.Append(eol, content);
   Strings.Append('        {', content);
   Strings.Append(eol, content);
-  Strings.Append('            "command": "voc -m",', content);
+  Strings.Append('            "Command": "voc -m",', content);
   Strings.Append(eol, content);
-  Strings.Append('            "file": "src/', content);
+  Strings.Append('            "File": "src/', content);
   Strings.Append(projectName, content);
   Strings.Append('.Mod"', content);
   Strings.Append(eol, content);
@@ -349,6 +275,7 @@ END buildDependencies;
 
 PROCEDURE buildProject(VAR projectFile: ARRAY OF CHAR; info: ProjectInfo): BOOLEAN;
 VAR
+  dep: vpkdepTree.Tdep;
   keys, values: StringList.TStringList;
   k, v: StringList.pstring;
   b: BOOLEAN;
@@ -356,8 +283,11 @@ VAR
   res, i: INTEGER;
   buildDirVar: ARRAY 64 OF CHAR;
 BEGIN
-  (* Get build information using local file reader *)
-  b := getBuildInfoFromLocalFile(projectFile, keys, values);
+  (* Create a dummy dependency object for build info extraction *)
+  dep := vpkdepTree.CreateDep(info.name);
+  
+  (* Get build information using the procedure from vpkJsonDepRetriever *)
+  b := vpkJsonDepRetriever.getBuildInfoFromFile(dep, keys, values, projectFile);
   
   IF b & (keys # NIL) & (values # NIL) THEN
     Out.String("Building project: "); Out.String(info.name); Out.Ln;
