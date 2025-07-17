@@ -85,8 +85,8 @@ BEGIN
   opt := opts.createOpt();
   opts.setOptName(opt, "-l");
   opts.setOptLName(opt, "--local");
-  opts.setOptHasVal(opt, TRUE);
-  opts.setOptDesc(opt, "build local project from specified vipak.json file");
+  opts.setOptHasVal(opt, FALSE);
+  opts.setOptDesc(opt, "build local project from vipak.json file");
   opts.setOptRequired(opt, FALSE);
   options.add(options, opt);
 
@@ -157,7 +157,6 @@ BEGIN
   IF pkgTree = "" THEN
     Out.String(" will use the default package tree location"); Out.Ln;
   END;
-  opts.valOfOpt("-l", foptions, localFile);
 
   IF pkgTree # "" THEN vpkConf.setTreeDir(pkgTree) END;
 
