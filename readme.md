@@ -2,7 +2,7 @@
 
 ![vipak logo](https://xn--y9azesw6bu.xn--y9a3aq/media/uploads/2022/01/19/4b650ab4-2e97-45f8-8fd3-af1c726399c0.png)
 
-**vipak** is a language-agnostic package manager that provides powerful dependency management and build automation for projects. It features a flexible backend system that retrieves dependencies from package trees and supports both global package management and local project builds.
+**vipak** is a language-agnostic package manager that provides dependency management and build automation for projects. It features a flexible backend system that retrieves dependencies from package trees and supports both global package management and local project builds.
 
 Currently, vipak uses the [vipak tree](https://codeberg.org/vishapoberon/vipatsar) as its default backend—a collection of JSON files containing package metadata, dependency information, download sources, and build instructions.
 
@@ -11,8 +11,8 @@ Currently, vipak uses the [vipak tree](https://codeberg.org/vishapoberon/vipatsa
 ### Requirements
 - git
 - gmake
-- cc (C compiler)
-- voc (for Oberon projects)
+- cc
+- voc
 
 ### Build from Source
 
@@ -21,6 +21,8 @@ git clone https://codeberg.org/vishapoberon/vipak
 cd vipak
 gmake
 ```
+
+Now you don't need `make` anymore. (:
 
 ## Basic Usage
 
