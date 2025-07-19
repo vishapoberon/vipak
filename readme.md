@@ -43,13 +43,9 @@ some examples:
 
 `vipak -p irc_bot -P /tmp/coolprefix -t /tmp/myothertree` — the same, but the dependency resolution will be conducted by using custom package description tree.
 
-todo
+local project builds
 ====
 
-json parser can be improved. it does not contain lists yet.
+see in details [here](local_build.md)
 
-though we have http module, only git downloads are currently supported by using external git tool.
 
-port to oberon system.
-
-lots of other things.
