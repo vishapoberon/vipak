@@ -1,5 +1,5 @@
 MODULE vpkTools;
-IMPORT Strings, strUtils;
+IMPORT Strings, strUtils, Out;
 
 
 PROCEDURE extractDomainFromUrl*(VAR url: ARRAY OF CHAR; VAR domain: ARRAY OF CHAR);
@@ -78,5 +78,63 @@ BEGIN
   END;
 END extractFilenameFromUrl;
 
+PROCEDURE extractRepoPathFromUrl*(VAR url: ARRAY OF CHAR; VAR repoPath: ARRAY OF CHAR);
+(* Extracts full repository path from URL like:
+   https://github.com/norayr/strutils -> github.com/norayr/strutils
+   https://codeberg.org/user/project -> codeberg.org/user/project
+*)
+VAR
+  start, i, j: INTEGER;
+  found: BOOLEAN;
+BEGIN
+  Out.String("@@@ extractRepoPathFromUrl input: '"); Out.String(url); Out.String("'"); Out.Ln;
+
+  start := 0;
+  found := FALSE;
+  repoPath[0] := 0X; (* Initialize to empty string *)
+
+  (* Find the "://" pattern to skip protocol *)
+  WHILE (start < LEN(url) - 2) & (url[start] # 0X) & ~found DO
+    IF (url[start] = ':') & (url[start+1] = '/') & (url[start+2] = '/') THEN
+      found := TRUE;
+      start := start + 3; (* Skip "://" *)
+    ELSE
+      INC(start);
+    END;
+  END;
+
+  Out.String("@@@ After skipping protocol, start="); Out.Int(start, 0); Out.Ln;
+
+  IF ~found THEN
+    (* No protocol found, assume the whole URL is the path *)
+    COPY(url, repoPath);
+    Out.String("@@@ No protocol found, using whole URL: '"); Out.String(repoPath); Out.String("'"); Out.Ln;
+    RETURN;
+  END;
+
+  (* Find end of URL (exclude .git suffix if present) *)
+  i := start;
+  WHILE (i < LEN(url)) & (url[i] # 0X) DO
+    INC(i);
+  END;
+
+  Out.String("@@@ End of URL at position: "); Out.Int(i, 0); Out.Ln;
+
+  (* Remove .git suffix if present *)
+  IF (i >= 4) & (url[i-4] = '.') & (url[i-3] = 'g') & (url[i-2] = 'i') & (url[i-1] = 't') THEN
+    i := i - 4;
+    Out.String("@@@ Removed .git suffix, new end: "); Out.Int(i, 0); Out.Ln;
+  END;
+
+  (* Copy domain + path *)
+  j := 0;
+  WHILE (start < i) & (j < LEN(repoPath) - 1) DO
+    repoPath[j] := url[start];
+    INC(j); INC(start);
+  END;
+  repoPath[j] := 0X;
+
+  Out.String("@@@ extractRepoPathFromUrl output: '"); Out.String(repoPath); Out.String("'"); Out.Ln;
+END extractRepoPathFromUrl;
 
 END vpkTools.

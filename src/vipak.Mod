@@ -11,7 +11,7 @@ END msgnopkg;
 
 PROCEDURE main;
 VAR
-  deps, sync, fetch, ask, local, init, withDeps: BOOLEAN;
+  deps, sync, fetch, ask, local, init: BOOLEAN;
   package, prefix, pkgTree, localFile: ARRAY 128 OF CHAR;
 
   options: opts.Options;
@@ -86,7 +86,7 @@ BEGIN
   opts.setOptName(opt, "-l");
   opts.setOptLName(opt, "--local");
   opts.setOptHasVal(opt, FALSE);
-  opts.setOptDesc(opt, "build local project from vipak.json file");
+  opts.setOptDesc(opt, "build local project from vipak.json file (includes dependencies)");
   opts.setOptRequired(opt, FALSE);
   options.add(options, opt);
 
@@ -95,14 +95,6 @@ BEGIN
   opts.setOptLName(opt, "--init");
   opts.setOptHasVal(opt, FALSE);
   opts.setOptDesc(opt, "create default vipak.json in current directory");
-  opts.setOptRequired(opt, FALSE);
-  options.add(options, opt);
-
-  opt := opts.createOpt();
-  opts.setOptName(opt, "-w");
-  opts.setOptLName(opt, "--with-deps");
-  opts.setOptHasVal(opt, FALSE);
-  opts.setOptDesc(opt, "also build dependencies when building local project");
   opts.setOptRequired(opt, FALSE);
   options.add(options, opt);
 
@@ -118,7 +110,7 @@ BEGIN
 
   COPY("", package); COPY("", prefix); COPY("", pkgTree); COPY("vipak.json", localFile);
   deps := FALSE; sync := FALSE; fetch := FALSE; ask := FALSE;
-  local := FALSE; init := FALSE; withDeps := FALSE;
+  local := FALSE; init := FALSE;
 
   fopt := opts.createOpt();
   fopt := opts.findOpt("-d", foptions);
@@ -144,10 +136,6 @@ BEGIN
   fopt := opts.findOpt("-i", foptions);
   IF fopt # NIL THEN init := TRUE END;
 
-  fopt := opts.createOpt();
-  fopt := opts.findOpt("-w", foptions);
-  IF fopt # NIL THEN withDeps := TRUE END;
-
   opts.valOfOpt("-p", foptions, package);
   opts.valOfOpt("-P", foptions, prefix);
   IF prefix = "" THEN
@@ -166,7 +154,7 @@ BEGIN
     vpkLocalBuilder.init
   ELSIF local THEN
     Out.String("Building local project from: "); Out.String(localFile); Out.Ln;
-    vpkLocalBuilder.buildLocal(localFile, withDeps)
+    vpkLocalBuilder.buildLocal(localFile)
   ELSIF sync THEN
     vpkSyncer.sync
   ELSE

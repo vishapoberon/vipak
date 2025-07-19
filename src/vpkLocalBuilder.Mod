@@ -2,7 +2,7 @@ MODULE vpkLocalBuilder;
 IMPORT Files, Out, Strings, Platform, In,
        Json, StringList, strUtils,
        vpkStorage, vpkSettings, vpkdepTree, vpkInstaller, vpkEnv, vpkJsonDepRetriever,
-       UnixFS;
+       vpkResolver, vpkSyncer, vpkDot, vpkTools, UnixFS;
 
 CONST
   DefaultProjectFile = "vipak.json";
@@ -45,7 +45,7 @@ BEGIN
   COPY("src/", filename);
   Strings.Append(projectName, filename);
   Strings.Append(".Mod", filename);
-  
+
   (* Create template module content *)
   COPY("MODULE ", content);
   Strings.Append(projectName, content);
@@ -96,7 +96,7 @@ VAR
 BEGIN
   (* Use a simple default project name *)
   COPY("myproject", projectName);
-  
+
   (* Create default JSON content *)
   COPY('{', content);
   Strings.Append(eol, content);
@@ -265,12 +265,117 @@ BEGIN
   RETURN TRUE;
 END createBuildDir;
 
-PROCEDURE buildDependencies(VAR projectFile: ARRAY OF CHAR);
+PROCEDURE resolveLocal(VAR projectFile: ARRAY OF CHAR): vpkdepTree.TdepTree;
+VAR
+  localDep: vpkdepTree.Tdep;
+  depsList: StringList.TStringList;
+  depName: StringList.pstring;
+  combinedTree, subTree: vpkdepTree.TdepTree;
+  currentDep: vpkdepTree.Tdep;
+  i, j: LONGINT;
+  found: BOOLEAN;
+  graphName: ARRAY 32 OF CHAR;
+  lst: StringList.TStringList;
+  localName: ARRAY 16 OF CHAR;
 BEGIN
-  (* For now, skip dependency building in local mode *)
-  (* This can be implemented later when the infrastructure is ready *)
-  Out.String("Dependency building for local projects not yet implemented."); Out.Ln;
-  Out.String("Please build dependencies manually using 'vipak -p <package>'"); Out.Ln;
+  Out.Ln; Out.String("resolving dependencies for local project..."); Out.Ln;
+
+  (* Set the local project file for dependency reading *)
+  vpkJsonDepRetriever.setLocalProjectFile(projectFile);
+
+  (* Create a dummy dependency object to read dependencies from local file *)
+  COPY("local-project", localName);
+  localDep := vpkdepTree.CreateDep(localName);
+
+  (* Create combined dependency tree *)
+  combinedTree := vpkdepTree.Create();
+
+  (* Get direct dependencies from the local project file *)
+  IF vpkJsonDepRetriever.getDepsFromFile(localDep, depsList) > 0 THEN
+    Out.String("Found "); Out.Int(depsList.Count, 0); Out.String(" direct dependencies"); Out.Ln;
+
+    (* Resolve each dependency using normal tree-based resolution *)
+    i := 0;
+    REPEAT
+      depName := depsList.GetString(depsList, i);
+      IF depName # NIL THEN
+        Out.String("Resolving: "); Out.String(depName^); Out.Ln;
+
+        (* Use normal vpkResolver.resolve for this dependency (it's in the tree) *)
+        subTree := vpkResolver.resolve(depName^, vpkJsonDepRetriever.getDeps);
+
+        (* Merge this subtree into combined tree (avoiding duplicates) *)
+        j := 0;
+        REPEAT
+          currentDep := vpkdepTree.Get(subTree, j);
+          IF currentDep # NIL THEN
+            (* Check if this dependency is already in combined tree *)
+            found := (combinedTree.GetByName(combinedTree, currentDep.name^) # NIL);
+            IF ~found THEN
+              vpkdepTree.AddCopy(combinedTree, currentDep);
+            END;
+          END;
+          INC(j);
+        UNTIL j = subTree.Count;
+      END;
+      INC(i);
+    UNTIL i = depsList.Count;
+
+    Out.String(" done! (:"); Out.Ln; Out.Ln;
+
+    (* Show dependency graph like normal vipak *)
+    vpkEnv.getGraphName(graphName);
+    lst := vpkDot.tree2dot(combinedTree);
+    Out.String("dependency graph:"); Out.Ln;
+    Out.String("-----------------"); Out.Ln;
+    StringList.DumpOut(lst);
+    lst.Dump(lst, graphName);
+    Out.String("-----------------"); Out.Ln;
+    Out.String("(use 'dot -Tpng deps.dot > deps.png' to get the graph image)"); Out.Ln; Out.Ln;
+    Out.String("dependencies will be installed in the following order:"); Out.Ln;
+    i := 0;
+    REPEAT
+      currentDep := vpkdepTree.Get(combinedTree, i);
+      IF currentDep # NIL THEN
+        Out.String(currentDep.name^); Out.Ln;
+      END;
+      INC(i);
+    UNTIL i = combinedTree.Count;
+  ELSE
+    Out.String("No dependencies found in project file."); Out.Ln;
+  END;
+
+  RETURN combinedTree;
+END resolveLocal;
+
+PROCEDURE buildDependencies(VAR projectFile: ARRAY OF CHAR);
+VAR
+  depTree: vpkdepTree.TdepTree;
+  currentDep: vpkdepTree.Tdep;
+  i: LONGINT;
+  buildDir: ARRAY 128 OF CHAR;
+BEGIN
+  (* Resolve all dependencies for local project *)
+  depTree := resolveLocal(projectFile);
+
+  IF depTree.Count > 0 THEN
+    (* Fetch all resolved dependencies *)
+    COPY("./", buildDir);
+    Strings.Append(DefaultBuildDir, buildDir);
+
+    i := 0;
+    REPEAT
+      currentDep := vpkdepTree.Get(depTree, i);
+      IF currentDep # NIL THEN
+        Out.String("Fetching: "); Out.String(currentDep.name^); Out.Ln;
+        vpkJsonDepRetriever.getURIandType(currentDep);
+        vpkSyncer.fetch(currentDep, buildDir);
+      END;
+      INC(i);
+    UNTIL i = depTree.Count;
+
+    Out.String("All dependencies fetched successfully!"); Out.Ln;
+  END;
 END buildDependencies;
 
 PROCEDURE buildProject(VAR projectFile: ARRAY OF CHAR; info: ProjectInfo): BOOLEAN;
@@ -285,13 +390,13 @@ VAR
 BEGIN
   (* Create a dummy dependency object for build info extraction *)
   dep := vpkdepTree.CreateDep(info.name);
-  
+
   (* Get build information using the procedure from vpkJsonDepRetriever *)
   b := vpkJsonDepRetriever.getBuildInfoFromFile(dep, keys, values, projectFile);
-  
+
   IF b & (keys # NIL) & (values # NIL) THEN
     Out.String("Building project: "); Out.String(info.name); Out.Ln;
-    
+
     (* Change to build directory *)
     COPY(DefaultBuildDir, buildDirVar);
     res := Platform.Chdir(buildDirVar);
@@ -299,18 +404,18 @@ BEGIN
       Out.String("Failed to change to build directory"); Out.Ln;
       RETURN FALSE;
     END;
-    
+
     (* Execute build commands *)
     i := 0;
     REPEAT
       k := keys.GetString(keys, i);
       v := values.GetString(values, i);
-      
+
       (* Create command: copy from parent directory if needed *)
       COPY(k^, cmd);
       Strings.Append(" ../", cmd);
       Strings.Append(v^, cmd);
-      
+
       Out.String("Executing: "); Out.String(cmd); Out.Ln;
       res := Platform.System(cmd);
       IF res # 0 THEN
@@ -321,7 +426,7 @@ BEGIN
       END;
       INC(i);
     UNTIL i = keys.Count;
-    
+
     (* Restore original directory *)
     COPY("..", buildDirVar);
     res := Platform.Chdir(buildDirVar);
@@ -333,7 +438,7 @@ BEGIN
   END;
 END buildProject;
 
-PROCEDURE buildLocal*(VAR projectFile: ARRAY OF CHAR; withDeps: BOOLEAN);
+PROCEDURE buildLocal*(VAR projectFile: ARRAY OF CHAR);
 VAR
   info: ProjectInfo;
   b: BOOLEAN;
@@ -344,27 +449,27 @@ BEGIN
     Out.String("Create one with 'vipak --init'"); Out.Ln;
     HALT(1);
   END;
-  
+
   (* Parse project file *)
   b := parseProjectFile(projectFile, info);
   IF ~b THEN
     Out.String("Failed to parse project file: "); Out.String(projectFile); Out.Ln;
     HALT(1);
   END;
-  
-  Out.String("Building project: "); Out.String(info.name); 
+
+  Out.String("Building project: "); Out.String(info.name);
   Out.String(" v"); Out.String(info.version); Out.Ln;
-  
+
   (* Create build directory *)
   IF ~createBuildDir() THEN
     HALT(1);
   END;
-  
-  (* Build dependencies if requested and available *)
-  IF withDeps & info.hasDeps THEN
+
+  (* Build dependencies if available - default behavior for local projects *)
+  IF info.hasDeps THEN
     buildDependencies(projectFile);
   END;
-  
+
   (* Build the project itself *)
   IF info.hasBuild THEN
     b := buildProject(projectFile, info);
@@ -386,11 +491,11 @@ BEGIN
     Out.String("Project file already exists: "); Out.String(projectFile); Out.Ln;
     HALT(1);
   END;
-  
+
   COPY("myproject", projectName);
   createDefaultProject(projectFile);
   createTemplateModule(projectName);
-  
+
   Out.Ln;
   Out.String("Project initialized! You can now:"); Out.Ln;
   Out.String("  1. Edit src/"); Out.String(projectName); Out.String(".Mod with your code"); Out.Ln;

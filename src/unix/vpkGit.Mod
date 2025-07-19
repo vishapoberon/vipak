@@ -4,28 +4,38 @@ IMPORT Out, Strings, Platform, vpkEnv;
 PROCEDURE pull*(VAR url : ARRAY OF CHAR; VAR dst : ARRAY OF CHAR; VAR branch: ARRAY OF CHAR);
 VAR i : INTEGER;
     cmd : ARRAY 2048 OF CHAR;
+    cleanDst: ARRAY 512 OF CHAR;
 BEGIN
-  cmd := "git init ";
-  Strings.Append(dst, cmd);
-  i:=Platform.System(cmd);
-  (*cmd := "git -C ";
-  Strings.Append(dst, cmd);
-  Strings.Append(" remote add origin ", cmd);
+  (* Clean destination path - remove trailing slash *)
+  COPY(dst, cleanDst);
+  IF (Strings.Length(cleanDst) > 1) & (cleanDst[Strings.Length(cleanDst) - 1] = '/') THEN
+    cleanDst[Strings.Length(cleanDst) - 1] := 0X;
+  END;
+
+  Out.String("*** GIT: Cloning to: '"); Out.String(cleanDst); Out.String("'"); Out.Ln;
+
+  (* Remove directory if it exists to avoid conflicts *)
+  cmd := "rm -rf ";
+  Strings.Append(cleanDst, cmd);
+  i := Platform.System(cmd);
+
+  (* Use git clone directly - much simpler *)
+  cmd := "git clone ";
   Strings.Append(url, cmd);
-  i:=Platform.System(cmd);*)
-  cmd := "";
-  cmd := "git -C ";
-  Strings.Append(dst, cmd);
-  Strings.Append(" pull ", cmd);
-  Strings.Append(url, cmd);
-  Out.String("branch: '"); Out.String(branch); Out.String("'."); Out.Ln;
   IF branch # "" THEN
-    Out.String("adding branch to commandline"); Out.Ln;
-    Strings.Append(" ", cmd);
+    Strings.Append(" --branch ", cmd);
     Strings.Append(branch, cmd);
   END;
-  Out.String("fetch command: '"); Out.String(cmd); Out.Char("'"); Out.Ln;
+  Strings.Append(" ", cmd);
+  Strings.Append(cleanDst, cmd);
+
+  Out.String("*** GIT: Executing: '"); Out.String(cmd); Out.String("'"); Out.Ln;
   i := Platform.System(cmd);
+  IF i # 0 THEN
+    Out.String("*** GIT: Command failed with exit code: "); Out.Int(i, 0); Out.Ln;
+  ELSE
+    Out.String("*** GIT: Clone successful"); Out.Ln;
+  END;
 END pull;
 
 PROCEDURE syncTree*(url, branch: ARRAY OF CHAR);

@@ -24,10 +24,14 @@ BEGIN
 END sync;
 
 PROCEDURE fetch*(VAR dep: vpkdepTree.Tdep; dst: ARRAY OF CHAR);
-VAR domain: ARRAY 64 OF CHAR;
+VAR repoPath: ARRAY 256 OF CHAR;
+    workingDst: ARRAY 512 OF CHAR; (* Local copy to modify *)
 BEGIN
-  Out.String("Starting fetch process..."); Out.Ln;
-  Out.String("Destination: "); Out.String(dst); Out.Ln;
+  Out.String("*** SYNCER: Starting fetch process..."); Out.Ln;
+  Out.String("*** SYNCER: Input destination: '"); Out.String(dst); Out.String("'"); Out.Ln;
+  COPY(dst, workingDst); (* Make a local copy to modify *)
+  Out.String("*** SYNCER: Working destination: '"); Out.String(workingDst); Out.String("'"); Out.Ln;
+
   IF dep = NIL THEN
     Out.String("Dependency is NIL"); Out.Ln;
     HALT(1);
@@ -37,33 +41,42 @@ BEGIN
     HALT(5);
   ELSE
     IF dep^.rmt IS vpkdepTree.RemoteGit THEN
-      Out.String("Remote type is Git"); Out.Ln;
-      vpkTools.extractDomainFromUrl(dep^.rmt^.URI, domain);
-      Out.String("Extracted domain: "); Out.String(domain); Out.Ln;
-      (* dst is changed by mkdefPkgDirPath and mkPkgdirPath *)
-      IF dst = "" THEN
-        vpkEnv.mkdefPkgDirPath(domain, dep^.name^, dst);
+      Out.String("*** SYNCER: Remote type is Git"); Out.Ln;
+      Out.String("*** SYNCER: Package name is: '"); Out.String(dep^.name^); Out.String("'"); Out.Ln;
+      Out.String("*** SYNCER: Remote URI is: '"); Out.String(dep^.rmt^.URI); Out.String("'"); Out.Ln;
+
+      vpkTools.extractRepoPathFromUrl(dep^.rmt^.URI, repoPath);
+      Out.String("*** SYNCER: Extracted repo path: '"); Out.String(repoPath); Out.String("'"); Out.Ln;
+
+      Out.String("*** SYNCER: About to call mkPkgDirPath with:"); Out.Ln;
+      Out.String("***   repoPath = '"); Out.String(repoPath); Out.String("'"); Out.Ln;
+      Out.String("***   name = '"); Out.String(dep^.name^); Out.String("'"); Out.Ln;
+      Out.String("***   workingDst = '"); Out.String(workingDst); Out.String("'"); Out.Ln;
+
+      (* Build the proper destination path *)
+      IF Strings.Length(workingDst) = 0 THEN
+        vpkEnv.mkdefPkgDirPath(repoPath, dep^.name^, workingDst);
       ELSE
-        vpkEnv.mkPkgDirPath(domain, dep^.name^, dst);
+        vpkEnv.mkPkgDirPath(repoPath, dep^.name^, workingDst);
       END;
-      Out.String("Final destination path: "); Out.String(dst); Out.Ln;
-      Out.String("Fetching repository..."); Out.Ln;
-      vpkGit.fetchRepo(dep^.rmt^.URI, dst, dep^.rmt(vpkdepTree.RemoteGit).branch);
+
+      Out.String("*** SYNCER: After mkPkgDirPath, workingDst = '"); Out.String(workingDst); Out.String("'"); Out.Ln;
+      Out.String("*** SYNCER: About to call git with destination: '"); Out.String(workingDst); Out.String("'"); Out.Ln;
+
+      vpkGit.fetchRepo(dep^.rmt^.URI, workingDst, dep^.rmt(vpkdepTree.RemoteGit).branch);
     ELSIF dep^.rmt IS vpkdepTree.RemoteHttps THEN
       Out.String("Remote type is HTTPS"); Out.Ln;
-      (* full dst will be determined in vpkHttps.fetchFiles for each file *)
-      vpkHttps.fetchFiles(dep, dst);
+      vpkHttps.fetchFiles(dep, workingDst);
     ELSIF dep^.rmt IS vpkdepTree.RemoteHttp THEN
       Out.String("Remote type is HTTP"); Out.Ln;
-      (* full dst will be determined in vpkHttps.fetchFiles for each file *)
-      vpkHttp.fetchFiles(dep, dst);
+      vpkHttp.fetchFiles(dep, workingDst);
      ELSE
       Out.String("TODO: neither git nor https url"); Out.Ln;
       Out.String("not handled");
       Out.Ln;
     END;
   END;
-  Out.String("Fetch process completed."); Out.Ln;
+  Out.String("*** SYNCER: Fetch process completed."); Out.Ln;
 END fetch;
 
 END vpkSyncer.

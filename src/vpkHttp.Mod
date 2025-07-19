@@ -8,6 +8,7 @@ VAR
   h: http.Client;
   answer: strTypes.pstring;
   domain, path: ARRAY 128 OF CHAR; port: ARRAY 8 OF CHAR;
+  repoPath: ARRAY 256 OF CHAR; (* Added for full repository path *)
   filename: ARRAY 64 OF CHAR;
   i, j: LONGINT;
   node: List.Node;
@@ -25,12 +26,19 @@ BEGIN
       IF node^.obj(vpkdepTree.File) # NIL THEN
         Out.String("getting "); Out.String(node^.obj(vpkdepTree.File)^.URI); Out.Ln;
 
+        (* Extract domain for connection *)
         vpkTools.extractDomainFromUrl(node^.obj(vpkdepTree.File)^.URI, domain);
         Out.String("connecting to "); Out.String(domain); Out.Ln;
+        
+        (* Extract full repository path for directory structure *)
+        vpkTools.extractRepoPathFromUrl(node^.obj(vpkdepTree.File)^.URI, repoPath);
+        Out.String("repo path: "); Out.String(repoPath); Out.Ln;
+        
         vpkTools.extractPathFromUrl(node^.obj(vpkdepTree.File)^.URI, path);
         vpkTools.extractFilenameFromUrl(node^.obj(vpkdepTree.File)^.URI, filename);
 
-        vpkEnv.mkPkgDirPath(domain, dep^.name^, dst);
+        (* Use full repository path instead of just domain *)
+        vpkEnv.mkPkgDirPath(repoPath, dep^.name^, dst);
 
         j := Platform.Chdir(dst);
 

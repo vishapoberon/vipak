@@ -19,31 +19,111 @@ BEGIN
 END getGraphName;
 
 PROCEDURE createIfNotThere*(VAR fileName: ARRAY OF CHAR);
+VAR
+  workName: ARRAY 512 OF CHAR;
+  len: INTEGER;
 BEGIN
-    IF ~UnixFS.ExistsByName(fileName) THEN
-      IF ~UnixFS.mkDir(fileName) THEN
-        Out.String("failed to create directory "); Out.String(fileName); Out.Ln; HALT(1);
-      END;
-    END;
+  COPY(fileName, workName);
 
+  (* Remove trailing slash for directory creation *)
+  len := Strings.Length(workName);
+  IF (len > 1) & (workName[len - 1] = '/') THEN
+    workName[len - 1] := 0X;
+  END;
+
+  IF ~UnixFS.ExistsByName(workName) THEN
+    IF ~UnixFS.mkDir(workName) THEN
+      Out.String("failed to create directory "); Out.String(workName); Out.Ln; HALT(1);
+    END;
+  END;
 END createIfNotThere;
 
-PROCEDURE getSrcRelPath*(VAR depName, domain, path0: ARRAY OF CHAR): strTypes.pstring;
+(* Create directories recursively like mkdir -p *)
+PROCEDURE mkDirRecursive*(VAR fullPath: ARRAY OF CHAR);
+VAR
+  currentPath: ARRAY 512 OF CHAR;
+  component: ARRAY 128 OF CHAR;
+  pos, nextPos: INTEGER;
+  i: INTEGER;
+BEGIN
+  (*
+  Out.String(">>> mkDirRecursive called with: '"); Out.String(fullPath); Out.String("'"); Out.Ln;
+  *)
+
+  COPY("", currentPath);
+  pos := 0;
+
+  (* Handle absolute paths starting with / *)
+  IF (Strings.Length(fullPath) > 0) & (fullPath[0] = '/') THEN
+    COPY("/", currentPath);
+    pos := 1;
+  END;
+
+  WHILE pos < Strings.Length(fullPath) DO
+    (* Find next '/' or end of string *)
+    nextPos := pos;
+    WHILE (nextPos < Strings.Length(fullPath)) & (fullPath[nextPos] # '/') DO
+      INC(nextPos);
+    END;
+
+    (* Extract component *)
+    IF nextPos > pos THEN
+      i := 0;
+      WHILE (pos < nextPos) & (i < LEN(component) - 1) DO
+        component[i] := fullPath[pos];
+        INC(i); INC(pos);
+      END;
+      component[i] := 0X;
+
+      (* Append component to current path *)
+      IF Strings.Length(currentPath) > 0 THEN
+        IF currentPath[Strings.Length(currentPath) - 1] # '/' THEN
+          Strings.Append("/", currentPath);
+        END;
+      END;
+      Strings.Append(component, currentPath);
+
+      (*
+      Out.String(">>> Creating directory: '"); Out.String(currentPath); Out.String("'"); Out.Ln;
+      *)
+
+      (* Create directory if it doesn't exist - createIfNotThere handles trailing slashes *)
+      createIfNotThere(currentPath);
+    END;
+
+    (* Skip the '/' *)
+    IF (pos < Strings.Length(fullPath)) & (fullPath[pos] = '/') THEN
+      INC(pos);
+    END;
+  END;
+
+  (*
+  Out.String(">>> mkDirRecursive completed"); Out.Ln;
+  *)
+END mkDirRecursive;
+
+PROCEDURE getSrcRelPath*(VAR depName, repoPath, path0: ARRAY OF CHAR): strTypes.pstring;
 VAR
   p: strTypes.pstring;
   len: INTEGER;
 BEGIN
-  len := 12 + Strings.Length(depName) + Strings.Length(path0) + Strings.Length(domain);
-  (* 5 chars are ../, /, /, plus a couple of chars  *)
+  (*
+  Out.String("@@@ getSrcRelPath called with:"); Out.Ln;
+  Out.String("@@@   depName: '"); Out.String(depName); Out.String("'"); Out.Ln;
+  Out.String("@@@   repoPath: '"); Out.String(repoPath); Out.String("'"); Out.Ln;
+  Out.String("@@@   path0: '"); Out.String(path0); Out.String("'"); Out.Ln;
+  *)
+  len := 16 + Strings.Length(path0) + Strings.Length(repoPath);
   NEW(p, len);
-  COPY("../", p^);
+  COPY("", p^);  (* Start with empty string instead of "../" *)
   Strings.Append(vpkSettings.vpkDepDir, p^);
   Strings.Append("/", p^);
-  Strings.Append(domain, p^);
-  Strings.Append("/", p^);
-  Strings.Append(depName, p^);
+  Strings.Append(repoPath, p^);
   Strings.Append("/", p^);
   Strings.Append(path0, p^);
+  (*
+  Out.String("@@@   result: '"); Out.String(p^); Out.String("'"); Out.Ln;
+  *)
   RETURN p;
 END getSrcRelPath;
 
@@ -89,42 +169,82 @@ BEGIN
   RETURN builddir
 END mkdefBldDir;
 
-PROCEDURE mkdefPkgDirPath*(VAR domain, name, path: ARRAY OF CHAR);
+PROCEDURE mkdefPkgDirPath*(VAR repoPath, name, path: ARRAY OF CHAR);
 VAR
   home: ARRAY 128 OF CHAR;
+  finalPath: ARRAY 512 OF CHAR;
 BEGIN
   getHome(home);
-  COPY(home, path);
-  Strings.Append("/", path);
-  Strings.Append(vpkSettings.vpkPkgDir, path);
-  createIfNotThere(path);
-  Strings.Append("/", path);
-  Strings.Append(vpkSettings.vpkDepDir, path);
-  createIfNotThere(path);
-  Strings.Append("/", path);
-  Strings.Append(domain, path);
-  createIfNotThere(path);
-  Strings.Append("/", path);
-  Strings.Append(name, path);
-  createIfNotThere(path);
+
+  (* Build: <home>/<vpkPkgDir>/deps/<repoPath>/<name>/ *)
+  COPY(home, finalPath);
+  Strings.Append("/", finalPath);
+  Strings.Append(vpkSettings.vpkPkgDir, finalPath);
+  Strings.Append("/", finalPath);
+  Strings.Append(vpkSettings.vpkDepDir, finalPath);
+  Strings.Append("/", finalPath);
+  Strings.Append(repoPath, finalPath);
+  Strings.Append("/", finalPath);
+  Strings.Append(name, finalPath);
+
+  (* Create all directories recursively *)
+  mkDirRecursive(finalPath);
+
+  (* Return the path with trailing slash *)
+  COPY(finalPath, path);
   Strings.Append("/", path);
 END mkdefPkgDirPath;
 
-PROCEDURE mkPkgDirPath*(VAR domain, name, path: ARRAY OF CHAR);
+PROCEDURE mkPkgDirPath*(VAR repoPath, name, path: ARRAY OF CHAR);
+VAR
+  finalPath: ARRAY 512 OF CHAR;
+  len: INTEGER;
 BEGIN
-  Strings.Append("/", path);
-  createIfNotThere(path);
-  Strings.Append(vpkSettings.vpkDepDir, path);
-  Strings.Append("/", path);
-  createIfNotThere(path);
-  Strings.Append(domain, path);
-  createIfNotThere(path);
-  Strings.Append("/", path);
-  Strings.Append(name, path);
-  createIfNotThere(path);
-  Strings.Append("/", path);
-END mkPkgDirPath;
+  (*
+  Out.String("=== DEBUG mkPkgDirPath START ==="); Out.Ln;
+  Out.String("Input path: '"); Out.String(path); Out.String("'"); Out.Ln;
+  Out.String("Input repoPath: '"); Out.String(repoPath); Out.String("'"); Out.Ln;
+  Out.String("Input name: '"); Out.String(name); Out.String("'"); Out.Ln;
+  *)
 
+  (* Start with clean path *)
+  COPY(path, finalPath);
+
+  (* Remove trailing slashes *)
+  len := Strings.Length(finalPath);
+  WHILE (len > 1) & (finalPath[len - 1] = '/') DO
+    finalPath[len - 1] := 0X;
+    DEC(len);
+  END;
+  (*
+  Out.String("After removing trailing slashes: '"); Out.String(finalPath); Out.String("'"); Out.Ln;
+  *)
+
+  (* Add /deps *)
+  Strings.Append("/", finalPath);
+  Strings.Append(vpkSettings.vpkDepDir, finalPath);
+  (*
+  Out.String("After adding deps: '"); Out.String(finalPath); Out.String("'"); Out.Ln;
+  *)
+
+  (* Add /<repoPath> - this already contains the package name! *)
+  Strings.Append("/", finalPath);
+  Strings.Append(repoPath, finalPath);
+  (*
+  Out.String("After adding repoPath: '"); Out.String(finalPath); Out.String("'"); Out.Ln;
+  *)
+
+  (* Create directories *)
+  mkDirRecursive(finalPath);
+
+  (* Return with trailing slash *)
+  COPY(finalPath, path);
+  Strings.Append("/", path);
+  (*
+  Out.String("Final output path: '"); Out.String(path); Out.String("'"); Out.Ln;
+  Out.String("=== DEBUG mkPkgDirPath END ==="); Out.Ln;
+  *)
+END mkPkgDirPath;
 
 PROCEDURE mkCmd*(VAR p0, p1: ARRAY OF CHAR): strTypes.pstring;
 VAR
