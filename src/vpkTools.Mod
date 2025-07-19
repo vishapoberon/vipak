@@ -87,8 +87,9 @@ VAR
   start, i, j: INTEGER;
   found: BOOLEAN;
 BEGIN
+  (*
   Out.String("@@@ extractRepoPathFromUrl input: '"); Out.String(url); Out.String("'"); Out.Ln;
-
+  *)
   start := 0;
   found := FALSE;
   repoPath[0] := 0X; (* Initialize to empty string *)
@@ -102,13 +103,15 @@ BEGIN
       INC(start);
     END;
   END;
-
+  (*
   Out.String("@@@ After skipping protocol, start="); Out.Int(start, 0); Out.Ln;
-
+  *)
   IF ~found THEN
     (* No protocol found, assume the whole URL is the path *)
     COPY(url, repoPath);
+    (*
     Out.String("@@@ No protocol found, using whole URL: '"); Out.String(repoPath); Out.String("'"); Out.Ln;
+    *)
     RETURN;
   END;
 
@@ -118,12 +121,16 @@ BEGIN
     INC(i);
   END;
 
+  (*
   Out.String("@@@ End of URL at position: "); Out.Int(i, 0); Out.Ln;
+  *)
 
   (* Remove .git suffix if present *)
   IF (i >= 4) & (url[i-4] = '.') & (url[i-3] = 'g') & (url[i-2] = 'i') & (url[i-1] = 't') THEN
     i := i - 4;
+    (*
     Out.String("@@@ Removed .git suffix, new end: "); Out.Int(i, 0); Out.Ln;
+    *)
   END;
 
   (* Copy domain + path *)
@@ -134,7 +141,9 @@ BEGIN
   END;
   repoPath[j] := 0X;
 
+  (*
   Out.String("@@@ extractRepoPathFromUrl output: '"); Out.String(repoPath); Out.String("'"); Out.Ln;
+  *)
 END extractRepoPathFromUrl;
 
 END vpkTools.

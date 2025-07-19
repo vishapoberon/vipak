@@ -27,10 +27,14 @@ PROCEDURE fetch*(VAR dep: vpkdepTree.Tdep; dst: ARRAY OF CHAR);
 VAR repoPath: ARRAY 256 OF CHAR;
     workingDst: ARRAY 512 OF CHAR; (* Local copy to modify *)
 BEGIN
+  (*
   Out.String("*** SYNCER: Starting fetch process..."); Out.Ln;
   Out.String("*** SYNCER: Input destination: '"); Out.String(dst); Out.String("'"); Out.Ln;
+  *)
   COPY(dst, workingDst); (* Make a local copy to modify *)
+  (*
   Out.String("*** SYNCER: Working destination: '"); Out.String(workingDst); Out.String("'"); Out.Ln;
+  *)
 
   IF dep = NIL THEN
     Out.String("Dependency is NIL"); Out.Ln;
@@ -41,17 +45,21 @@ BEGIN
     HALT(5);
   ELSE
     IF dep^.rmt IS vpkdepTree.RemoteGit THEN
+      (*
       Out.String("*** SYNCER: Remote type is Git"); Out.Ln;
       Out.String("*** SYNCER: Package name is: '"); Out.String(dep^.name^); Out.String("'"); Out.Ln;
       Out.String("*** SYNCER: Remote URI is: '"); Out.String(dep^.rmt^.URI); Out.String("'"); Out.Ln;
+      *)
 
       vpkTools.extractRepoPathFromUrl(dep^.rmt^.URI, repoPath);
+      (*
       Out.String("*** SYNCER: Extracted repo path: '"); Out.String(repoPath); Out.String("'"); Out.Ln;
 
       Out.String("*** SYNCER: About to call mkPkgDirPath with:"); Out.Ln;
       Out.String("***   repoPath = '"); Out.String(repoPath); Out.String("'"); Out.Ln;
       Out.String("***   name = '"); Out.String(dep^.name^); Out.String("'"); Out.Ln;
       Out.String("***   workingDst = '"); Out.String(workingDst); Out.String("'"); Out.Ln;
+      *)
 
       (* Build the proper destination path *)
       IF Strings.Length(workingDst) = 0 THEN
@@ -60,8 +68,10 @@ BEGIN
         vpkEnv.mkPkgDirPath(repoPath, dep^.name^, workingDst);
       END;
 
+      (*
       Out.String("*** SYNCER: After mkPkgDirPath, workingDst = '"); Out.String(workingDst); Out.String("'"); Out.Ln;
       Out.String("*** SYNCER: About to call git with destination: '"); Out.String(workingDst); Out.String("'"); Out.Ln;
+      *)
 
       vpkGit.fetchRepo(dep^.rmt^.URI, workingDst, dep^.rmt(vpkdepTree.RemoteGit).branch);
     ELSIF dep^.rmt IS vpkdepTree.RemoteHttps THEN
@@ -76,7 +86,7 @@ BEGIN
       Out.Ln;
     END;
   END;
-  Out.String("*** SYNCER: Fetch process completed."); Out.Ln;
+  Out.String(Fetch process completed."); Out.Ln;
 END fetch;
 
 END vpkSyncer.

@@ -420,53 +420,79 @@ BEGIN
   b := FALSE;
   jsonstr := NIL;
 
+  (*
   Out.String("DEBUG: Reading file: "); Out.String(filename); Out.Ln;
-  
+  *)
+
   (* Read from specified file instead of package tree *)
   vpkStorage.fileToString(filename, jsonstr);
 
   IF jsonstr # NIL THEN
+    (*
     Out.String("DEBUG: JSON string loaded, length: "); Out.Int(LEN(jsonstr^), 0); Out.Ln;
+    *)
     NEW(errstr, ErrmessSize);
     b := Json.Parse(tree, jsonstr^, errstr^);
     IF b THEN
+      (*
       Out.String("DEBUG: JSON parsed successfully"); Out.Ln;
+      *)
       IF tree IS Json.Obj THEN
+        (*
         Out.String("DEBUG: Root is object"); Out.Ln;
+        *)
         rootObj := tree(Json.Obj);
         NEW(bl, Strings.Length(vpkSettings.bldType) + 1);
         COPY(vpkSettings.bldType, bl^);
+        (*
         Out.String("DEBUG: Looking for build key: "); Out.String(bl^); Out.Ln;
+        *)
         IF Json.ObjSelect(buildValue, rootObj, bl) THEN
+          (*
           Out.String("DEBUG: Found Build section"); Out.Ln;
+          *)
           IF buildValue IS Json.Arr THEN
+            (*
             Out.String("DEBUG: Build section is array"); Out.Ln;
+            *)
             buildArray := buildValue(Json.Arr);
             WHILE buildArray # NIL DO
+              (*
               Out.String("DEBUG: Processing build array element"); Out.Ln;
+              *)
               IF buildArray.value IS Json.Obj THEN
+                (*
                 Out.String("DEBUG: Build array element is object"); Out.Ln;
+                *)
                 buildStep := buildArray.value(Json.Obj);
                 NEW(cm, Strings.Length(vpkSettings.bldCommand) + 1);
                 NEW(fl, Strings.Length(vpkSettings.bldFile) + 1);
                 COPY(vpkSettings.bldCommand, cm^);
                 COPY(vpkSettings.bldFile, fl^);
+                (*
                 Out.String("DEBUG: Looking for command key: "); Out.String(cm^); Out.Ln;
                 Out.String("DEBUG: Looking for file key: "); Out.String(fl^); Out.Ln;
+                *)
 
                 (* Simple approach - just try to get command and file directly *)
                 IF Json.ObjSelect(command, buildStep, cm) & Json.ObjSelect(file, buildStep, fl) THEN
+                  (*
                   Out.String("DEBUG: Found both command and file keys"); Out.Ln;
+                  *)
                   IF (command IS Json.Str) & (file IS Json.Str) THEN
+                    (*
                     Out.String("DEBUG: Both are strings"); Out.Ln;
+                    *)
                     IF k = NIL THEN k := StringList.Create() END;
                     IF v = NIL THEN v := StringList.Create() END;
                     k.AppendString(k, command(Json.Str).str^);
                     v.AppendString(v, file(Json.Str).str^);
-                    Out.String("Found build step: "); Out.String(command(Json.Str).str^); 
+                    Out.String("Found build step: "); Out.String(command(Json.Str).str^);
                     Out.String(" "); Out.String(file(Json.Str).str^); Out.Ln;
                   ELSE
+                    (*
                     Out.String("DEBUG: command and file must be strings"); Out.Ln;
+                    *)
                   END;
                 ELSE
                   Out.String("DEBUG: Failed to select 'command' or 'file' from build step"); Out.Ln;
