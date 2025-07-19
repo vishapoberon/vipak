@@ -394,6 +394,11 @@ vipak --tree /path/to/custom/tree --local
 
 Once dependencies are downloaded to `build/deps/`, builds work offline. Delete the build directory to force re-downloading dependencies.
 
+### Not implemented
+
+vipak currently doesn't care about package versions.
+It can check `md5` sums of downloaded files. But package version information is ignored for now.
+
 ## Contributing
 
 To contribute to vipak or report issues, visit: https://codeberg.org/vishapoberon/vipak
