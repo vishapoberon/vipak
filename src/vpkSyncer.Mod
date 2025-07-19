@@ -86,7 +86,7 @@ BEGIN
       Out.Ln;
     END;
   END;
-  Out.String(Fetch process completed."); Out.Ln;
+  Out.String("Fetch process completed."); Out.Ln;
 END fetch;
 
 END vpkSyncer.
