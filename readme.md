@@ -10,7 +10,7 @@ Currently, vipak uses the [vipak tree](https://codeberg.org/vishapoberon/vipatsa
 
 ### Requirements
 - git
-- gmake  
+- gmake
 - cc (C compiler)
 - voc (for Oberon projects)
 
@@ -39,7 +39,7 @@ vipak -s
 # Show dependencies only (no download/build)
 vipak -d -p irc_bot
 
-# Resolve and fetch packages  
+# Resolve and fetch packages
 vipak -f -p irc_bot
 
 # Build package and dependencies (default prefix: ~/vpkLocal)
@@ -378,8 +378,9 @@ This project was built using vipak --local
 
 Vipak integrates with the global package tree for dependency resolution. Dependencies are resolved from:
 
-1. **Local package tree** - `~/.vipak/vipatsar/`
-2. **Remote package tree** - Default: https://codeberg.org/vishapoberon/vipatsar
+1. **Default package tree** - `~/.vipak/vipatsar/`
+2. **Custom package tree** - by using `-t` option.
+3. **Project vipak.json** - when building local project.
 
 ### Custom Package Trees
 
