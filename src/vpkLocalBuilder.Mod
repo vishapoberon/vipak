@@ -1,6 +1,6 @@
 MODULE vpkLocalBuilder;
 IMPORT Files, Out, Strings, Platform, In,
-       Json, StringList, strUtils,
+       Json, StringList, List, strUtils,
        vpkStorage, vpkSettings, vpkdepTree, vpkInstaller, vpkEnv, vpkJsonDepRetriever,
        vpkResolver, vpkSyncer, vpkDot, vpkTools, UnixFS;
 
@@ -352,16 +352,25 @@ PROCEDURE buildDependencies(VAR projectFile: ARRAY OF CHAR);
 VAR
   depTree: vpkdepTree.TdepTree;
   currentDep: vpkdepTree.Tdep;
-  i: LONGINT;
+  i, j: LONGINT;
   buildDir: ARRAY 128 OF CHAR;
+  keys, values: StringList.TStringList;
+  k, v: StringList.pstring;
+  b: BOOLEAN;
+  cmd, srcPath: StringList.pstring;
+  res: INTEGER;
+  repoPath: ARRAY 256 OF CHAR;
+  node: List.Node;
+  parentDir: ARRAY 8 OF CHAR;
 BEGIN
   (* Resolve all dependencies for local project *)
   depTree := resolveLocal(projectFile);
 
   IF depTree.Count > 0 THEN
-    (* Fetch all resolved dependencies *)
+    (* Set up build directory *)
     COPY("./", buildDir);
     Strings.Append(DefaultBuildDir, buildDir);
+    COPY("..", parentDir);  (* Variable for Platform.Chdir *)
 
     i := 0;
     REPEAT
@@ -370,11 +379,66 @@ BEGIN
         Out.String("Fetching: "); Out.String(currentDep.name^); Out.Ln;
         vpkJsonDepRetriever.getURIandType(currentDep);
         vpkSyncer.fetch(currentDep, buildDir);
+
+        (* Now build the dependency *)
+        Out.String("Building dependency: "); Out.String(currentDep.name^); Out.Ln;
+        b := vpkJsonDepRetriever.getBuildInfo(currentDep, keys, values);
+        IF b & (keys # NIL) & (values # NIL) THEN
+          Out.String("Build info found for dependency: "); Out.String(currentDep.name^); Out.Ln;
+
+          j := 0;
+          REPEAT
+            k := keys.GetString(keys, j);
+            v := values.GetString(values, j);
+
+            (* Get the repository path for building *)
+            IF currentDep^.rmt IS vpkdepTree.RemoteGit THEN
+              vpkTools.extractRepoPathFromUrl(currentDep^.rmt.URI, repoPath);
+            ELSIF currentDep^.rmt IS vpkdepTree.RemoteHttps THEN
+              node := currentDep^.rmt(vpkdepTree.RemoteHttps)^.Files.Get(currentDep^.rmt(vpkdepTree.RemoteHttps)^.Files, 0);
+              IF node # NIL THEN
+                vpkTools.extractRepoPathFromUrl(node^.obj(vpkdepTree.File)^.URI, repoPath);
+              END;
+            ELSE
+              Out.String("WARNING: building for neither git nor https sources not supported yet"); Out.Ln;
+            END;
+
+            (* Build source path - same logic as vpkInstaller *)
+            srcPath := vpkEnv.getSrcRelPath(currentDep.name^, repoPath, v^);
+            cmd := vpkEnv.mkCmd(k^, srcPath^);
+
+            Out.String("Executing dependency build: "); Out.String(cmd^); Out.Ln;
+            Out.String("Building dependency in: "); Out.String(buildDir); Out.Ln;
+
+            (* Change to build directory and execute *)
+            res := Platform.Chdir(buildDir);
+            IF res # 0 THEN
+              Out.String("Failed to change directory to "); Out.String(buildDir); Out.Ln;
+              HALT(1);
+            END;
+
+            res := Platform.System(cmd^);
+            IF res # 0 THEN
+              Out.String("Dependency build failed with code: "); Out.Int(res, 0); Out.Ln;
+              (* Try to return to parent directory *)
+              res := Platform.Chdir(parentDir);
+              HALT(1);
+            END;
+
+            (* Return to parent directory *)
+            res := Platform.Chdir(parentDir);
+
+            INC(j);
+          UNTIL j = keys.Count;
+
+        ELSE
+          Out.String("No build information found for dependency: "); Out.String(currentDep.name^); Out.Ln;
+        END;
       END;
       INC(i);
     UNTIL i = depTree.Count;
 
-    Out.String("All dependencies fetched successfully!"); Out.Ln;
+    Out.String("All dependencies fetched and built successfully!"); Out.Ln;
   END;
 END buildDependencies;
 
