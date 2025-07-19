@@ -55,7 +55,7 @@ TYPE
            Files* : List.TList;
   END;
 
-  RemoteHttps* = POINTER TO RemoteHttpDesc;
+  RemoteHttps* = POINTER TO RemoteHttpsDesc;
   RemoteHttpsDesc* = RECORD(RemoteDesc)
            Files* : List.TList;
   END;
