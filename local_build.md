@@ -44,7 +44,7 @@ The `vipak.json` file defines your project configuration:
 ```json
 {
     "Package": "project-name",
-    "Author": "Your Name", 
+    "Author": "Your Name",
     "License": "GPL-3",
     "Version": "0.1",
     "Remote": {
@@ -113,7 +113,7 @@ Build both a main program and a test program:
 ```json
 {
     "Package": "myproject",
-    "Author": "Your Name", 
+    "Author": "Your Name",
     "License": "GPL-3",
     "Version": "0.1",
     "Remote": {
@@ -131,7 +131,7 @@ Build both a main program and a test program:
             "File": "src/myproject.Mod"
         },
         {
-            "Command": "voc -m", 
+            "Command": "voc -m",
             "File": "src/test.Mod"
         }
     ]
@@ -146,7 +146,7 @@ Some dependencies from Git repositories, others from HTTP sources:
 {
     "Package": "myproject",
     "Author": "Your Name",
-    "License": "GPL-3", 
+    "License": "GPL-3",
     "Version": "0.1",
     "Remote": {
         "type": "git",
@@ -184,7 +184,7 @@ For projects that only build library modules:
             "File": "src/MyLib.Mod"
         },
         {
-            "Command": "voc -s", 
+            "Command": "voc -s",
             "File": "src/MyLibUtils.Mod"
         }
     ]
@@ -197,7 +197,7 @@ For projects that only build library modules:
 
 - `voc -m file.Mod` - Compile main program (creates executable)
 - `voc -s file.Mod` - Compile library module (creates .sym file)
-- `voc -c file.Mod` - Compile to object file only
+- `voc -C file.Mod` - Compile to object file only
 
 ### Custom Build Commands
 
@@ -264,7 +264,7 @@ myproject/
 $ vipak --init
 Project initialized! You can now:
   1. Edit src/myproject.Mod with your code
-  2. Edit vipak.json to configure build settings  
+  2. Edit vipak.json to configure build settings
   3. Run 'vipak --local' to build the project
 
 # Edit your source file
@@ -301,7 +301,7 @@ Fetching: strutils
 Building dependency: strutils
 Build successful
 
-Fetching: opts  
+Fetching: opts
 *** GIT: Cloning to: 'build/deps/codeberg.org/vishapoberon/opts'
 *** GIT: Clone successful
 Building dependency: opts
