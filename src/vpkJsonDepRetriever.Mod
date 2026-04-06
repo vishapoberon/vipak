@@ -25,36 +25,70 @@ PROCEDURE getBuildInfo*(VAR d: vpkdepTree.Tdep; VAR k, v: StringList.TStringList
 VAR
   jsonstr, errstr: strUtils.pstring;
   tree, buildValue, command, file: Json.Value;
-  rootObj, buildStep: Json.Obj;
+  rootObj, buildStep, rootObjTmp, buildStepTmp: Json.Obj;
   buildArray: Json.Arr;
-  cm, fl, bl, cmLower, flLower: Json.jString;
-  b: BOOLEAN;
+  cm, fl, bl, cmLower, flLower, blLower: Json.jString;
 BEGIN
   k := NIL; v := NIL;
-  b := FALSE;
   jsonstr := NIL;
-  vpkStorage.json2pstring(d.name^, jsonstr);
+  vpkStorage.json2pstring(d.name^, d.version, jsonstr);
   IF jsonstr # NIL THEN
     NEW(errstr, ErrmessSize);
-    b := Json.Parse(tree, jsonstr^, errstr^);
-    IF b THEN
+    IF Json.Parse(tree, jsonstr^, errstr^) THEN
       IF tree IS Json.Obj THEN
         rootObj := tree(Json.Obj);
-        NEW(bl, Strings.Length(vpkSettings.bldType) + 1); (* +1 for 0X *)
+        NEW(bl, Strings.Length(vpkSettings.bldType) + 1);
+        NEW(blLower, Strings.Length(vpkSettings.bldType) + 1);
         COPY(vpkSettings.bldType, bl^);
-        IF Json.ObjSelect(buildValue, rootObj, bl) THEN
-          IF buildValue IS Json.Arr THEN
-            buildArray := buildValue(Json.Arr);
-            WHILE buildArray # NIL DO
+        COPY(vpkSettings.bldType, blLower^);
+        ToLower(blLower^);
+
+        rootObjTmp := rootObj;
+        IF ~Json.ObjSelect(buildValue, rootObjTmp, bl) THEN
+          rootObjTmp := rootObj;
+          IF ~Json.ObjSelect(buildValue, rootObjTmp, blLower) THEN
+            Out.String("Build section not found."); Out.Ln;
+            RETURN FALSE
+          END;
+        END;
+
+        IF buildValue IS Json.Arr THEN
+          buildArray := buildValue(Json.Arr);
+          WHILE buildArray # NIL DO
+            IF buildArray.value IS Json.Obj THEN
               buildStep := buildArray.value(Json.Obj);
-              NEW(cm, Strings.Length(vpkSettings.bldCommand) + 1); (* +1 for 0X *)
-              NEW(fl, Strings.Length(vpkSettings.bldFile) + 1);    (* +1 for 0X *)
+              NEW(cm, Strings.Length(vpkSettings.bldCommand) + 1);
+              NEW(fl, Strings.Length(vpkSettings.bldFile) + 1);
               COPY(vpkSettings.bldCommand, cm^);
               COPY(vpkSettings.bldFile, fl^);
-              IF (d^.Type = vpkSettings.https) OR (d^.Type = vpkSettings.http) THEN
-                (* Handle HTTPS build steps *)
-                IF Json.ObjSelect(command, buildStep, cm) & Json.ObjSelect(file, buildStep, fl) THEN
-                  IF (command IS Json.Str) & (file IS Json.Str) THEN
+              NEW(cmLower, Strings.Length(cm^) + 1);
+              NEW(flLower, Strings.Length(fl^) + 1);
+              COPY(cm^, cmLower^);
+              COPY(fl^, flLower^);
+              ToLower(cmLower^);
+              ToLower(flLower^);
+
+              buildStepTmp := buildStep;
+              IF ~Json.ObjSelect(command, buildStepTmp, cm) THEN
+                buildStepTmp := buildStep;
+                IF ~Json.ObjSelect(command, buildStepTmp, cmLower) THEN
+                  Out.String("Failed to select 'command' from build step"); Out.Ln;
+                ELSE
+                  buildStepTmp := buildStep;
+                  IF ~Json.ObjSelect(file, buildStepTmp, fl) THEN
+                    buildStepTmp := buildStep;
+                    IF ~Json.ObjSelect(file, buildStepTmp, flLower) THEN
+                      Out.String("Failed to select 'file' from build step"); Out.Ln;
+                    ELSIF (command IS Json.Str) & (file IS Json.Str) THEN
+                      IF k = NIL THEN k := StringList.Create() END;
+                      IF v = NIL THEN v := StringList.Create() END;
+                      k.AppendString(k, command(Json.Str).str^);
+                      v.AppendString(v, file(Json.Str).str^);
+                    ELSE
+                      Out.String("command and file must be strings"); Out.Ln;
+                      HALT(5);
+                    END;
+                  ELSIF (command IS Json.Str) & (file IS Json.Str) THEN
                     IF k = NIL THEN k := StringList.Create() END;
                     IF v = NIL THEN v := StringList.Create() END;
                     k.AppendString(k, command(Json.Str).str^);
@@ -63,19 +97,14 @@ BEGIN
                     Out.String("command and file must be strings"); Out.Ln;
                     HALT(5);
                   END;
-                ELSE
-                  Out.String("Failed to select 'command' or 'file' from build step"); Out.Ln;
                 END;
-              ELSIF d^.Type = vpkSettings.git THEN
-                (* Handle Git build steps *)
-                NEW(cmLower, Strings.Length(cm^) + 1);
-                NEW(flLower, Strings.Length(fl^) + 1);
-                COPY(cm^, cmLower^);
-                COPY(fl^, flLower^);
-                ToLower(cmLower^);
-                ToLower(flLower^);
-                IF Json.ObjSelect(command, buildStep, cmLower) & Json.ObjSelect(file, buildStep, flLower) THEN
-                  IF (command IS Json.Str) & (file IS Json.Str) THEN
+              ELSE
+                buildStepTmp := buildStep;
+                IF ~Json.ObjSelect(file, buildStepTmp, fl) THEN
+                  buildStepTmp := buildStep;
+                  IF ~Json.ObjSelect(file, buildStepTmp, flLower) THEN
+                    Out.String("Failed to select 'file' from build step"); Out.Ln;
+                  ELSIF (command IS Json.Str) & (file IS Json.Str) THEN
                     IF k = NIL THEN k := StringList.Create() END;
                     IF v = NIL THEN v := StringList.Create() END;
                     k.AppendString(k, command(Json.Str).str^);
@@ -84,17 +113,21 @@ BEGIN
                     Out.String("command and file must be strings"); Out.Ln;
                     HALT(5);
                   END;
+                ELSIF (command IS Json.Str) & (file IS Json.Str) THEN
+                  IF k = NIL THEN k := StringList.Create() END;
+                  IF v = NIL THEN v := StringList.Create() END;
+                  k.AppendString(k, command(Json.Str).str^);
+                  v.AppendString(v, file(Json.Str).str^);
                 ELSE
-                  Out.String("Failed to select 'command' or 'file' from build step"); Out.Ln;
+                  Out.String("command and file must be strings"); Out.Ln;
+                  HALT(5);
                 END;
               END;
-              buildArray := buildArray.next;
             END;
-          ELSE
-            Out.String("Build section is not an array."); Out.Ln;
+            buildArray := buildArray.next;
           END;
         ELSE
-          Out.String("Build section not found."); Out.Ln;
+          Out.String("Build section is not an array."); Out.Ln;
         END;
       ELSE
         Out.String("JSON root is not an object."); Out.Ln;
@@ -105,7 +138,7 @@ BEGIN
   ELSE
     Out.String("No JSON string provided."); Out.Ln;
   END;
-  RETURN b;
+  RETURN (k # NIL) & (v # NIL) & (k.Count > 0);
 END getBuildInfo;
 
 (*PROCEDURE fetchHttpsFiles(someObj: Json.Obj; VAR httpsRemote: vpkdepTree.RemoteHttps);*)
@@ -227,7 +260,7 @@ VAR
   gitRemote: vpkdepTree.RemoteGit;
 BEGIN
   jsonstr := NIL;
-  vpkStorage.json2pstring(d.name^, jsonstr);
+  vpkStorage.json2pstring(d.name^, d.version, jsonstr);
   IF jsonstr # NIL THEN
     NEW(errstr, ErrmessSize);
     b := Json.Parse(tree, jsonstr^, errstr^);
@@ -346,6 +379,7 @@ END getURIandType;
 PROCEDURE getDeps*(VAR d: vpkdepTree.Tdep; VAR depstrlist: StringList.TStringList): LONGINT;
 VAR
   jsonstr, errstr: strUtils.pstring;
+  keyLower, depKeyLower: strUtils.pstring;
   tree, depsValue, singleDep: Json.Value;
   rootObj, depObj: Json.Obj;
   depName, depVersion: Json.jString;
@@ -353,7 +387,7 @@ VAR
 BEGIN
   depstrlist := NIL;
   jsonstr := NIL;
-  vpkStorage.json2pstring(d.name^, jsonstr);
+  vpkStorage.json2pstring(d.name^, d.version, jsonstr);
   IF jsonstr # NIL THEN
     NEW(errstr, ErrmessSize);
     IF Json.Parse(tree, jsonstr^, errstr^) THEN
@@ -362,7 +396,16 @@ BEGIN
         (* searching for dependencies section *)
         foundDepSection := FALSE;
         REPEAT
-          IF rootObj.name^ = vpkSettings.depTypKey THEN
+          (*IF rootObj.name^ = vpkSettings.depTypKey THEN*)
+          NEW(keyLower, LEN(rootObj.name^) + 1);
+          COPY(rootObj.name^, keyLower^);
+          ToLower(keyLower^);
+
+          NEW(depKeyLower, LEN(vpkSettings.depTypKey) + 1);
+          COPY(vpkSettings.depTypKey, depKeyLower^);
+          ToLower(depKeyLower^);
+
+          IF keyLower^ = depKeyLower^ THEN
             foundDepSection := TRUE;
           END;
           IF ~foundDepSection THEN rootObj := rootObj.next END
@@ -379,7 +422,19 @@ BEGIN
                     depName := depObj.name;
                     depVersion := depObj.value(Json.Str).str;
                     IF depstrlist = NIL THEN depstrlist := StringList.Create() END;
-                    depstrlist.AppendString(depstrlist, depName^);
+                    IF depVersion # NIL THEN
+                      IF depVersion^ # "" THEN
+                        NEW(errstr, Strings.Length(depName^) + Strings.Length(depVersion^) + 2);
+                        COPY(depName^, errstr^);
+                        Strings.Append(":", errstr^);
+                        Strings.Append(depVersion^, errstr^);
+                        depstrlist.AppendString(depstrlist, errstr^);
+                      ELSE
+                        depstrlist.AppendString(depstrlist, depName^);
+                      END;
+                    ELSE
+                      depstrlist.AppendString(depstrlist, depName^);
+                    END;
                     singleDep := depObj.next;  (* Move to the next dependency *)
                   END;
                 END;  (* End of inner WHILE loop for dependencies *)
@@ -411,102 +466,109 @@ PROCEDURE getBuildInfoFromFile*(VAR d: vpkdepTree.Tdep; VAR k, v: StringList.TSt
 VAR
   jsonstr, errstr: strUtils.pstring;
   tree, buildValue, command, file: Json.Value;
-  rootObj, buildStep: Json.Obj;
+  rootObj, buildStep, rootObjTmp, buildStepTmp: Json.Obj;
   buildArray: Json.Arr;
-  cm, fl, bl: Json.jString;
-  b: BOOLEAN;
+  cm, fl, bl, cmLower, flLower, blLower: Json.jString;
 BEGIN
   k := NIL; v := NIL;
-  b := FALSE;
   jsonstr := NIL;
 
-  (*
-  Out.String("DEBUG: Reading file: "); Out.String(filename); Out.Ln;
-  *)
-
-  (* Read from specified file instead of package tree *)
   vpkStorage.fileToString(filename, jsonstr);
 
   IF jsonstr # NIL THEN
-    (*
-    Out.String("DEBUG: JSON string loaded, length: "); Out.Int(LEN(jsonstr^), 0); Out.Ln;
-    *)
     NEW(errstr, ErrmessSize);
-    b := Json.Parse(tree, jsonstr^, errstr^);
-    IF b THEN
-      (*
-      Out.String("DEBUG: JSON parsed successfully"); Out.Ln;
-      *)
+    IF Json.Parse(tree, jsonstr^, errstr^) THEN
       IF tree IS Json.Obj THEN
-        (*
-        Out.String("DEBUG: Root is object"); Out.Ln;
-        *)
         rootObj := tree(Json.Obj);
         NEW(bl, Strings.Length(vpkSettings.bldType) + 1);
+        NEW(blLower, Strings.Length(vpkSettings.bldType) + 1);
         COPY(vpkSettings.bldType, bl^);
-        (*
-        Out.String("DEBUG: Looking for build key: "); Out.String(bl^); Out.Ln;
-        *)
-        IF Json.ObjSelect(buildValue, rootObj, bl) THEN
-          (*
-          Out.String("DEBUG: Found Build section"); Out.Ln;
-          *)
-          IF buildValue IS Json.Arr THEN
-            (*
-            Out.String("DEBUG: Build section is array"); Out.Ln;
-            *)
-            buildArray := buildValue(Json.Arr);
-            WHILE buildArray # NIL DO
-              (*
-              Out.String("DEBUG: Processing build array element"); Out.Ln;
-              *)
-              IF buildArray.value IS Json.Obj THEN
-                (*
-                Out.String("DEBUG: Build array element is object"); Out.Ln;
-                *)
-                buildStep := buildArray.value(Json.Obj);
-                NEW(cm, Strings.Length(vpkSettings.bldCommand) + 1);
-                NEW(fl, Strings.Length(vpkSettings.bldFile) + 1);
-                COPY(vpkSettings.bldCommand, cm^);
-                COPY(vpkSettings.bldFile, fl^);
-                (*
-                Out.String("DEBUG: Looking for command key: "); Out.String(cm^); Out.Ln;
-                Out.String("DEBUG: Looking for file key: "); Out.String(fl^); Out.Ln;
-                *)
+        COPY(vpkSettings.bldType, blLower^);
+        ToLower(blLower^);
 
-                (* Simple approach - just try to get command and file directly *)
-                IF Json.ObjSelect(command, buildStep, cm) & Json.ObjSelect(file, buildStep, fl) THEN
-                  (*
-                  Out.String("DEBUG: Found both command and file keys"); Out.Ln;
-                  *)
-                  IF (command IS Json.Str) & (file IS Json.Str) THEN
-                    (*
-                    Out.String("DEBUG: Both are strings"); Out.Ln;
-                    *)
+        rootObjTmp := rootObj;
+        IF ~Json.ObjSelect(buildValue, rootObjTmp, bl) THEN
+          rootObjTmp := rootObj;
+          IF ~Json.ObjSelect(buildValue, rootObjTmp, blLower) THEN
+            Out.String("Build section not found."); Out.Ln;
+            RETURN FALSE
+          END;
+        END;
+
+        IF buildValue IS Json.Arr THEN
+          buildArray := buildValue(Json.Arr);
+          WHILE buildArray # NIL DO
+            IF buildArray.value IS Json.Obj THEN
+              buildStep := buildArray.value(Json.Obj);
+              NEW(cm, Strings.Length(vpkSettings.bldCommand) + 1);
+              NEW(fl, Strings.Length(vpkSettings.bldFile) + 1);
+              NEW(cmLower, Strings.Length(vpkSettings.bldCommand) + 1);
+              NEW(flLower, Strings.Length(vpkSettings.bldFile) + 1);
+              COPY(vpkSettings.bldCommand, cm^);
+              COPY(vpkSettings.bldFile, fl^);
+              COPY(vpkSettings.bldCommand, cmLower^);
+              COPY(vpkSettings.bldFile, flLower^);
+              ToLower(cmLower^);
+              ToLower(flLower^);
+
+              buildStepTmp := buildStep;
+              IF ~Json.ObjSelect(command, buildStepTmp, cm) THEN
+                buildStepTmp := buildStep;
+                IF ~Json.ObjSelect(command, buildStepTmp, cmLower) THEN
+                  Out.String("DEBUG: Failed to select 'command' from build step"); Out.Ln;
+                ELSE
+                  buildStepTmp := buildStep;
+                  IF ~Json.ObjSelect(file, buildStepTmp, fl) THEN
+                    buildStepTmp := buildStep;
+                    IF ~Json.ObjSelect(file, buildStepTmp, flLower) THEN
+                      Out.String("DEBUG: Failed to select 'file' from build step"); Out.Ln;
+                    ELSIF (command IS Json.Str) & (file IS Json.Str) THEN
+                      IF k = NIL THEN k := StringList.Create() END;
+                      IF v = NIL THEN v := StringList.Create() END;
+                      k.AppendString(k, command(Json.Str).str^);
+                      v.AppendString(v, file(Json.Str).str^);
+                      Out.String("Found build step: "); Out.String(command(Json.Str).str^);
+                      Out.String(" "); Out.String(file(Json.Str).str^); Out.Ln;
+                    END;
+                  ELSIF (command IS Json.Str) & (file IS Json.Str) THEN
                     IF k = NIL THEN k := StringList.Create() END;
                     IF v = NIL THEN v := StringList.Create() END;
                     k.AppendString(k, command(Json.Str).str^);
                     v.AppendString(v, file(Json.Str).str^);
                     Out.String("Found build step: "); Out.String(command(Json.Str).str^);
                     Out.String(" "); Out.String(file(Json.Str).str^); Out.Ln;
-                  ELSE
-                    (*
-                    Out.String("DEBUG: command and file must be strings"); Out.Ln;
-                    *)
                   END;
-                ELSE
-                  Out.String("DEBUG: Failed to select 'command' or 'file' from build step"); Out.Ln;
                 END;
               ELSE
-                Out.String("DEBUG: Build array element is not an object"); Out.Ln;
+                buildStepTmp := buildStep;
+                IF ~Json.ObjSelect(file, buildStepTmp, fl) THEN
+                  buildStepTmp := buildStep;
+                  IF ~Json.ObjSelect(file, buildStepTmp, flLower) THEN
+                    Out.String("DEBUG: Failed to select 'file' from build step"); Out.Ln;
+                  ELSIF (command IS Json.Str) & (file IS Json.Str) THEN
+                    IF k = NIL THEN k := StringList.Create() END;
+                    IF v = NIL THEN v := StringList.Create() END;
+                    k.AppendString(k, command(Json.Str).str^);
+                    v.AppendString(v, file(Json.Str).str^);
+                    Out.String("Found build step: "); Out.String(command(Json.Str).str^);
+                    Out.String(" "); Out.String(file(Json.Str).str^); Out.Ln;
+                  END;
+                ELSIF (command IS Json.Str) & (file IS Json.Str) THEN
+                  IF k = NIL THEN k := StringList.Create() END;
+                  IF v = NIL THEN v := StringList.Create() END;
+                  k.AppendString(k, command(Json.Str).str^);
+                  v.AppendString(v, file(Json.Str).str^);
+                  Out.String("Found build step: "); Out.String(command(Json.Str).str^);
+                  Out.String(" "); Out.String(file(Json.Str).str^); Out.Ln;
+                END;
               END;
-              buildArray := buildArray.next;
+            ELSE
+              Out.String("DEBUG: Build array element is not an object"); Out.Ln;
             END;
-          ELSE
-            Out.String("Build section is not an array."); Out.Ln;
+            buildArray := buildArray.next;
           END;
         ELSE
-          Out.String("Build section not found."); Out.Ln;
+          Out.String("Build section is not an array."); Out.Ln;
         END;
       ELSE
         Out.String("JSON root is not an object."); Out.Ln;
@@ -523,6 +585,8 @@ END getBuildInfoFromFile;
 PROCEDURE getDepsFromFile*(VAR d: vpkdepTree.Tdep; VAR depstrlist: StringList.TStringList): LONGINT;
 VAR
   jsonstr, errstr: strUtils.pstring;
+	keyLower, depKeyLower: strUtils.pstring;
+	depWithVersion: strUtils.pstring;
   tree, depsValue, singleDep: Json.Value;
   rootObj, depObj: Json.Obj;
   depName, depVersion: Json.jString;
@@ -548,7 +612,16 @@ BEGIN
         (* searching for dependencies section *)
         foundDepSection := FALSE;
         REPEAT
-          IF rootObj.name^ = vpkSettings.depTypKey THEN
+          (*IF rootObj.name^ = vpkSettings.depTypKey THEN*)
+					NEW(keyLower, LEN(rootObj.name^) + 1);
+          COPY(rootObj.name^, keyLower^);
+          ToLower(keyLower^);
+          
+          NEW(depKeyLower, LEN(vpkSettings.depTypKey) + 1);
+          COPY(vpkSettings.depTypKey, depKeyLower^);
+          ToLower(depKeyLower^);
+          
+          IF keyLower^ = depKeyLower^ THEN
             foundDepSection := TRUE;
           END;
           IF ~foundDepSection THEN rootObj := rootObj.next END
@@ -565,7 +638,37 @@ BEGIN
                     depName := depObj.name;
                     depVersion := depObj.value(Json.Str).str;
                     IF depstrlist = NIL THEN depstrlist := StringList.Create() END;
-                    depstrlist.AppendString(depstrlist, depName^);
+                    IF depVersion # NIL THEN
+                      IF depVersion^ # "" THEN
+                        NEW(errstr, Strings.Length(depName^) + Strings.Length(depVersion^) + 2);
+                        COPY(depName^, errstr^);
+                        Strings.Append(":", errstr^);
+                        Strings.Append(depVersion^, errstr^);
+                        depstrlist.AppendString(depstrlist, errstr^);
+                      ELSE
+                        (*depstrlist.AppendString(depstrlist, depName^);*)
+                        IF depVersion # NIL THEN
+                          NEW(depWithVersion, LEN(depName^) + LEN(depVersion^) + 2);
+                          COPY(depName^, depWithVersion^);
+                          Strings.Append(":", depWithVersion^);
+                          Strings.Append(depVersion^, depWithVersion^);
+                          depstrlist.AppendString(depstrlist, depWithVersion^);
+                        ELSE
+                          depstrlist.AppendString(depstrlist, depName^);
+                        END;
+                      END;
+                    ELSE
+                      (*depstrlist.AppendString(depstrlist, depName^);*)
+                      IF depVersion # NIL THEN
+                        NEW(depWithVersion, LEN(depName^) + LEN(depVersion^) + 2);
+                        COPY(depName^, depWithVersion^);
+                        Strings.Append(":", depWithVersion^);
+                        Strings.Append(depVersion^, depWithVersion^);
+                        depstrlist.AppendString(depstrlist, depWithVersion^);
+                      ELSE
+                        depstrlist.AppendString(depstrlist, depName^);
+                      END;
+                    END;
                     singleDep := depObj.next;  (* Move to the next dependency *)
                   END;
                 END;  (* End of inner WHILE loop for dependencies *)

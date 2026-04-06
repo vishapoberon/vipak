@@ -1,5 +1,5 @@
 MODULE vpkInstaller;
-IMPORT In, Out, Platform,
+IMPORT In, Out, Platform, Strings,
        List, StringList,
        vpkResolver, vpkdepTree, vpkDot, vpkEnv, vpkJsonDepRetriever,vpkSyncer,
        vpkTools, vpkSettings;
@@ -76,9 +76,9 @@ VAR
   keys, values: StringList.TStringList;
   k, v: StringList.pstring;
   b: BOOLEAN;
-  builddir, cmd, srcPath: StringList.pstring;
+  builddir, cmd, srcPath, fullCmd: StringList.pstring;
   res: INTEGER;
-  repoPath: ARRAY 256 OF CHAR; (* Changed from domain to repoPath *)
+  repoPath: ARRAY 256 OF CHAR;
   node: List.Node;
 BEGIN
   IF prefix # "" THEN
@@ -136,11 +136,12 @@ BEGIN
         cmd := vpkEnv.mkCmd(k^, srcPath^);
         Out.String("Command: "); Out.String(cmd^); Out.Ln;
         Out.String("Building in "); Out.String(builddir^); Out.Ln;
-        res := Platform.Chdir(builddir^);
-        IF res # 0 THEN
-          Out.String("Failed to change directory to "); Out.String(builddir^); Out.Ln; Out.String("This should never happen."); Out.Ln; HALT(66);
-        END;
-        res := Platform.System(cmd^);
+        NEW(fullCmd, Strings.Length(builddir^) + Strings.Length(cmd^) + 8);
+        COPY("cd ", fullCmd^);
+        Strings.Append(builddir^, fullCmd^);
+        Strings.Append(" && ", fullCmd^);
+        Strings.Append(cmd^, fullCmd^);
+        res := Platform.System(fullCmd^);
         IF res # 0 THEN Out.String("Failed to run build command"); Out.Ln END;
         INC(j)
       UNTIL j = keys.Count;

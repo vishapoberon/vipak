@@ -108,8 +108,6 @@ BEGIN
   Strings.Append(eol, content);
   Strings.Append('    "License": "GPL-3",', content);
   Strings.Append(eol, content);
-  Strings.Append('    "Version": "0.1",', content);
-  Strings.Append(eol, content);
   Strings.Append('    "Remote": {', content);
   Strings.Append(eol, content);
   Strings.Append('        "type": "git",', content);
@@ -167,10 +165,10 @@ END fileExists;
 PROCEDURE parseProjectFile(VAR filename: ARRAY OF CHAR; VAR info: ProjectInfo): BOOLEAN;
 VAR
   jsonstr, errstr: strUtils.pstring;
-  tree, packageValue, authorValue, licenseValue, versionValue: Json.Value;
+  tree, packageValue, authorValue, licenseValue: Json.Value;
   depsValue, buildValue: Json.Value;
   rootObj: Json.Obj;
-  packageKey, authorKey, licenseKey, versionKey: Json.jString;
+  packageKey, authorKey, licenseKey: Json.jString;
   depsKey, buildKey: Json.jString;
   b: BOOLEAN;
 BEGIN
@@ -214,12 +212,8 @@ BEGIN
           END;
         END;
 
-        (* Parse Version *)
-        NEW(versionKey, 8); COPY("Version", versionKey^);
-        IF Json.ObjSelect(versionValue, rootObj, versionKey) THEN
-          IF versionValue IS Json.Str THEN
-            COPY(versionValue(Json.Str).str^, info.version);
-          END;
+        IF ~vpkStorage.versionFromPackageFileName(filename, info.version) THEN
+          COPY("", info.version);
         END;
 
         (* Check for Dependencies *)

@@ -3,8 +3,6 @@ IMPORT Out, Strings,
        strUtils, List, StringList,
        vpkSettings;
 
-
-
 TYPE
 
   pstring = strUtils.pstring;
@@ -24,6 +22,7 @@ TYPE
        Add* : PROCEDURE (VAR l : TdepTree; VAR s : Tdep);
        Get* : PROCEDURE (VAR l : TdepTree; i : LONGINT): Tdep;
  GetByName* : PROCEDURE (VAR l : TdepTree; VAR name : ARRAY OF CHAR): Tdep;
+ GetByNameVersion* : PROCEDURE (VAR l : TdepTree; VAR name, version : ARRAY OF CHAR): Tdep;
      Empty* : PROCEDURE (VAR l : TdepTree) : BOOLEAN;
      Count* : LONGINT;
   END;
@@ -63,6 +62,7 @@ TYPE
   TdepDesc* = RECORD
          prev-, next-: Tdep;
          name- : pstring;
+      version* : ARRAY 64 OF CHAR;
          deps- : Tdeps;
        Create* : PROCEDURE (VAR name: ARRAY OF CHAR): Tdep;
    AssignDeps* : PROCEDURE (VAR d: Tdep; VAR deps: Tdeps);
@@ -71,7 +71,7 @@ TYPE
 
        Type*   : LONGINT; (* from vpkSettings: http, https, gemini, git... *)
        rmt*    : Remote;
-       END;
+  END;
 
 PROCEDURE AssignDeps*(VAR d: Tdep; VAR deps: Tdeps);
 BEGIN
@@ -90,12 +90,24 @@ BEGIN
   NEW(dep);
   NEW(dep.name, Strings.Length(name) + 1);
   COPY(name, dep.name^);
+  COPY("", dep.version);
   dep.AssignDeps := AssignDeps;
   dep.InstallRetriever := InstallRetriever;
   dep.RetrieveDeps := NIL;
   dep.rmt := NIL;
+  dep.Type := 0;
+  dep.Create := CreateDep;
   RETURN dep
 END CreateDep;
+
+PROCEDURE CreateDepVersioned*(VAR name, version: ARRAY OF CHAR): Tdep;
+VAR
+  dep: Tdep;
+BEGIN
+  dep := CreateDep(name);
+  COPY(version, dep.version);
+  RETURN dep
+END CreateDepVersioned;
 
 PROCEDURE list(VAR s : StringList.TStringList);
 VAR e : StringList.Node;
@@ -106,7 +118,6 @@ BEGIN
    REPEAT
       e := s.Get(s, i);
       IF e # NIL THEN Out.String (e.obj(StringList.TString).str^); Out.Ln END;
-      (*Out.String (e.string); Out.Ln;*)
       INC(i);
    UNTIL i = s.Count - 1;
 END list;
@@ -117,61 +128,73 @@ VAR
 BEGIN
   l := 0;
   REPEAT
-    Out.Int(l, 0); Out.String(": "); Out.String(deps[l].name^); Out.Ln;
+    Out.Int(l, 0); Out.String(": "); Out.String(deps[l].name^);
+    IF deps[l].version # "" THEN
+      Out.String(":"); Out.String(deps[l].version);
+    END;
+    Out.Ln;
     INC(l);
   UNTIL l = LEN(deps^) - 1;
 END listDeps;
 
 PROCEDURE Free*(VAR l : TdepTree);
- BEGIN
-   l := NIL
- END Free;
+BEGIN
+  l := NIL
+END Free;
 
 PROCEDURE Clear*(VAR l : TdepTree);
- BEGIN
-    l.First   := NIL;
-    l.Count   := 0;
- END Clear;
+BEGIN
+  l.First := NIL;
+  l.Last := NIL;
+  l.Count := 0;
+END Clear;
 
-PROCEDURE Empty* (VAR l : TdepTree) : BOOLEAN;
- BEGIN
-    RETURN l.First = NIL
- END Empty;
+PROCEDURE Empty*(VAR l : TdepTree) : BOOLEAN;
+BEGIN
+  RETURN l.First = NIL
+END Empty;
 
-PROCEDURE Add* (VAR l : TdepTree; VAR d: Tdep);
- BEGIN
-    IF l.First = NIL THEN
-       l.First := d;
-    ELSE
-       l.Last.next := d;
-    END;
-    l.Last := d;
-    l.Last.next := NIL;
-    INC(l.Count);
- END Add;
+PROCEDURE Add*(VAR l : TdepTree; VAR d: Tdep);
+BEGIN
+  IF l.First = NIL THEN
+     l.First := d;
+     d.prev := NIL;
+  ELSE
+     l.Last.next := d;
+     d.prev := l.Last;
+  END;
+  l.Last := d;
+  l.Last.next := NIL;
+  INC(l.Count);
+END Add;
 
-PROCEDURE AddCopy* (VAR l : TdepTree; VAR d: Tdep);
+PROCEDURE AddCopy*(VAR l : TdepTree; VAR d: Tdep);
 VAR
   new: Tdep;
   ln: INTEGER;
- BEGIN
- NEW(new);
- new.prev := d.prev; new.next := d.next;
- ln := Strings.Length(d.name^) + 1; NEW(new.name, ln); COPY(d.name^, new.name^);
- new.deps := d.deps;
- new.Create := d.Create; new.AssignDeps := d.AssignDeps;
- new.RetrieveDeps := d.RetrieveDeps;
- new.InstallRetriever := d.InstallRetriever;
+BEGIN
+  NEW(new);
+  new.prev := d.prev; new.next := d.next;
+  ln := Strings.Length(d.name^) + 1; NEW(new.name, ln); COPY(d.name^, new.name^);
+  COPY(d.version, new.version);
+  new.deps := d.deps;
+  new.Create := d.Create; new.AssignDeps := d.AssignDeps;
+  new.RetrieveDeps := d.RetrieveDeps;
+  new.InstallRetriever := d.InstallRetriever;
+  new.Type := d.Type;
+  new.rmt := d.rmt;
 
-    IF l.First = NIL THEN
-       l.First := new;
-    ELSE
-       l.Last.next := new;
-    END;
-    l.Last := new;
-    l.Last.next := NIL;
-    INC(l.Count);
- END AddCopy;
+  IF l.First = NIL THEN
+     l.First := new;
+     new.prev := NIL;
+  ELSE
+     l.Last.next := new;
+     new.prev := l.Last;
+  END;
+  l.Last := new;
+  l.Last.next := NIL;
+  INC(l.Count);
+END AddCopy;
 
 PROCEDURE Get*(VAR l: TdepTree; inx: LONGINT): Tdep;
 VAR
@@ -181,7 +204,6 @@ BEGIN
   d := NIL;
   i := 0;
   IF (inx < l.Count) & (inx >= 0) THEN
-    i := 0;
     d := l.First;
     WHILE i # inx DO
       IF d # NIL THEN d := d.next END;
@@ -193,43 +215,50 @@ END Get;
 
 PROCEDURE GetByName*(VAR l: TdepTree; VAR name: ARRAY OF CHAR): Tdep;
 VAR
-  i: LONGINT;
   d: Tdep;
-  fnd: BOOLEAN;
 BEGIN
-  fnd := FALSE;
-  i := 0;
   d := l.First;
-  REPEAT
-    IF d # NIL THEN
-      IF d.name^ = name THEN
-        fnd := TRUE;
-        RETURN d;
-      ELSE
-        d := d.next
-      END
+  WHILE d # NIL DO
+    IF d.name^ = name THEN
+      RETURN d;
     END;
-    INC(i);
-(*  UNTIL fnd OR (i >= l.Count );*)
-  UNTIL fnd OR (d = NIL);
-  RETURN NIL;  (* in case of this UNTIL it seems safe to RETURN d *)
+    d := d.next
+  END;
+  RETURN NIL;
 END GetByName;
 
-PROCEDURE Create* () : TdepTree;
-    VAR l : TdepTree;
- BEGIN
-    NEW(l);
-    l.First   := NIL;
-    l.Last    := NIL;
-    l.Count   := 0;
-    l.Add     := Add;
-    l.Get     := Get;
-  l.GetByName := GetByName;
-    l.Clear   := Clear;
-    l.Free    := Free;
-    l.Empty   := Empty;
-    RETURN(l);
- END Create;
+PROCEDURE GetByNameVersion*(VAR l: TdepTree; VAR name, version: ARRAY OF CHAR): Tdep;
+VAR
+  d: Tdep;
+BEGIN
+  d := l.First;
+  WHILE d # NIL DO
+    IF d.name^ = name THEN
+      IF (version = "") OR (d.version = version) THEN
+        RETURN d;
+      END;
+    END;
+    d := d.next
+  END;
+  RETURN NIL;
+END GetByNameVersion;
 
+PROCEDURE Create*() : TdepTree;
+VAR l : TdepTree;
+BEGIN
+  NEW(l);
+  l.First := NIL;
+  l.Last := NIL;
+  l.Count := 0;
+  l.Add := Add;
+  l.Get := Get;
+  l.GetByName := GetByName;
+  l.GetByNameVersion := GetByNameVersion;
+  l.Clear := Clear;
+  l.Free := Free;
+  l.Empty := Empty;
+  l.Create := Create;
+  RETURN l;
+END Create;
 
 END vpkdepTree.
