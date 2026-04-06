@@ -1,7 +1,7 @@
 MODULE vpkLocalBuilder;
-IMPORT Files, Out, Strings, Platform, In,
+IMPORT Files, Out, Strings, Platform,
        Json, StringList, List, strUtils,
-       vpkStorage, vpkSettings, vpkdepTree, vpkInstaller, vpkEnv, vpkJsonDepRetriever,
+       vpkStorage, vpkSettings, vpkdepTree, vpkEnv, vpkJsonDepRetriever,
        vpkResolver, vpkSyncer, vpkDot, vpkTools, UnixFS;
 
 CONST
@@ -351,20 +351,17 @@ VAR
   keys, values: StringList.TStringList;
   k, v: StringList.pstring;
   b: BOOLEAN;
-  cmd, srcPath: StringList.pstring;
+  cmd, srcPath, fullCmd: StringList.pstring;
   res: INTEGER;
   repoPath: ARRAY 256 OF CHAR;
   node: List.Node;
-  parentDir: ARRAY 8 OF CHAR;
-  lastSlash, idx: INTEGER;  (* ADD: for filename removal *)
+  lastSlash, idx: INTEGER;
 BEGIN
   (* Resolve all dependencies for local project *)
   depTree := resolveLocal(projectFile);
 
   IF depTree.Count > 0 THEN
-    (* IMPROVED: Use simple build path *)
     COPY("build", buildDir);
-    COPY("..", parentDir);
 
     i := 0;
     REPEAT
@@ -429,20 +426,16 @@ BEGIN
             Out.String("Executing dependency build: "); Out.String(cmd^); Out.Ln;
             Out.String("Building dependency in: "); Out.String(buildDir); Out.Ln;
 
-            (* IMPROVED: Continue on errors instead of HALT *)
-            res := Platform.Chdir(buildDir);
+            NEW(fullCmd, Strings.Length(buildDir) + Strings.Length(cmd^) + 8);
+            COPY("cd ", fullCmd^);
+            Strings.Append(buildDir, fullCmd^);
+            Strings.Append(" && ", fullCmd^);
+            Strings.Append(cmd^, fullCmd^);
+            res := Platform.System(fullCmd^);
             IF res # 0 THEN
-              Out.String("Warning: Failed to change directory to "); Out.String(buildDir); Out.Ln;
+              Out.String("Warning: Dependency build failed with code: "); Out.Int(res, 0); Out.Ln;
             ELSE
-              res := Platform.System(cmd^);
-              IF res # 0 THEN
-                Out.String("Warning: Dependency build failed with code: "); Out.Int(res, 0); Out.Ln;
-              ELSE
-                Out.String("Dependency build successful"); Out.Ln;
-              END;
-
-              (* Return to parent directory *)
-              res := Platform.Chdir(parentDir);
+              Out.String("Dependency build successful"); Out.Ln;
             END;
 
             INC(j);
@@ -465,52 +458,41 @@ VAR
   keys, values: StringList.TStringList;
   k, v: StringList.pstring;
   b: BOOLEAN;
-  cmd: ARRAY 256 OF CHAR;
+  fullCmd: strUtils.pstring;
+  srcFile: ARRAY 256 OF CHAR;
   res, i: INTEGER;
-  buildDirVar: ARRAY 64 OF CHAR;
 BEGIN
-  (* Create a dummy dependency object for build info extraction *)
   dep := vpkdepTree.CreateDep(info.name);
-
-  (* Get build information using the procedure from vpkJsonDepRetriever *)
   b := vpkJsonDepRetriever.getBuildInfoFromFile(dep, keys, values, projectFile);
 
   IF b & (keys # NIL) & (values # NIL) THEN
     Out.String("Building project: "); Out.String(info.name); Out.Ln;
-
-    (* Change to build directory *)
-    COPY(DefaultBuildDir, buildDirVar);
-    res := Platform.Chdir(buildDirVar);
-    IF res # 0 THEN
-      Out.String("Failed to change to build directory"); Out.Ln;
-      RETURN FALSE;
-    END;
-
-    (* Execute build commands *)
     i := 0;
     REPEAT
       k := keys.GetString(keys, i);
       v := values.GetString(values, i);
 
-      (* Create command: copy from parent directory if needed *)
-      COPY(k^, cmd);
-      Strings.Append(" ../", cmd);
-      Strings.Append(v^, cmd);
+      (* Source file is relative to project root; build runs in build/ *)
+      COPY("../", srcFile);
+      Strings.Append(v^, srcFile);
 
-      Out.String("Executing: "); Out.String(cmd); Out.Ln;
-      res := Platform.System(cmd);
+      NEW(fullCmd, Strings.Length(DefaultBuildDir) + Strings.Length(k^) + Strings.Length(srcFile) + 10);
+      COPY("cd ", fullCmd^);
+      Strings.Append(DefaultBuildDir, fullCmd^);
+      Strings.Append(" && ", fullCmd^);
+      Strings.Append(k^, fullCmd^);
+      Strings.Append(" ", fullCmd^);
+      Strings.Append(srcFile, fullCmd^);
+
+      Out.String("Executing: "); Out.String(fullCmd^); Out.Ln;
+      res := Platform.System(fullCmd^);
       IF res # 0 THEN
         Out.String("Build command failed with code: "); Out.Int(res, 0); Out.Ln;
-        COPY("..", buildDirVar);
-        res := Platform.Chdir(buildDirVar);
         RETURN FALSE;
       END;
       INC(i);
     UNTIL i = keys.Count;
 
-    (* Restore original directory *)
-    COPY("..", buildDirVar);
-    res := Platform.Chdir(buildDirVar);
     Out.String("Build completed successfully!"); Out.Ln;
     RETURN TRUE;
   ELSE
