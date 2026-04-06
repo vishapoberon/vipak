@@ -264,46 +264,38 @@ VAR
   localDep: vpkdepTree.Tdep;
   depsList: StringList.TStringList;
   depName: StringList.pstring;
-  combinedTree, subTree: vpkdepTree.TdepTree;
+  combinedTree, subTree, displayTree: vpkdepTree.TdepTree;
   currentDep: vpkdepTree.Tdep;
-  i, j: LONGINT;
+  directDepsArr: vpkdepTree.Tdeps;
+  i, j, m: LONGINT;
   found: BOOLEAN;
   graphName: ARRAY 32 OF CHAR;
   lst: StringList.TStringList;
-  localName: ARRAY 16 OF CHAR;
+  projectName: ARRAY 64 OF CHAR;
+  dName: ARRAY 128 OF CHAR;
 BEGIN
   Out.Ln; Out.String("resolving dependencies for local project..."); Out.Ln;
 
-  (* Set the local project file for dependency reading *)
   vpkJsonDepRetriever.setLocalProjectFile(projectFile);
 
-  (* Create a dummy dependency object to read dependencies from local file *)
-  COPY("local-project", localName);
-  localDep := vpkdepTree.CreateDep(localName);
+  COPY("local-project", projectName);
+  localDep := vpkdepTree.CreateDep(projectName);
 
-  (* Create combined dependency tree *)
   combinedTree := vpkdepTree.Create();
 
-  (* Get direct dependencies from the local project file *)
   IF vpkJsonDepRetriever.getDepsFromFile(localDep, depsList) > 0 THEN
     Out.String("Found "); Out.Int(depsList.Count, 0); Out.String(" direct dependencies"); Out.Ln;
 
-    (* Resolve each dependency using normal tree-based resolution *)
     i := 0;
     REPEAT
       depName := depsList.GetString(depsList, i);
       IF depName # NIL THEN
         Out.String("Resolving: "); Out.String(depName^); Out.Ln;
-
-        (* Use normal vpkResolver.resolve for this dependency (it's in the tree) *)
         subTree := vpkResolver.resolve(depName^, vpkJsonDepRetriever.getDeps);
-
-        (* Merge this subtree into combined tree (avoiding duplicates) *)
         j := 0;
         REPEAT
           currentDep := vpkdepTree.Get(subTree, j);
           IF currentDep # NIL THEN
-            (* Check if this dependency is already in combined tree *)
             found := (combinedTree.GetByName(combinedTree, currentDep.name^) # NIL);
             IF ~found THEN
               vpkdepTree.AddCopy(combinedTree, currentDep);
@@ -317,9 +309,36 @@ BEGIN
 
     Out.String(" done! (:"); Out.Ln; Out.Ln;
 
-    (* Show dependency graph like normal vipak *)
+    (* Build virtual root node: localDep.deps -> the direct deps in combinedTree *)
+    NEW(directDepsArr, depsList.Count);
+    i := 0;
+    REPEAT
+      depName := depsList.GetString(depsList, i);
+      IF depName # NIL THEN
+        (* Extract name before ':' *)
+        m := 0;
+        WHILE (depName^[m] # 0X) & (depName^[m] # ':') DO INC(m) END;
+        j := 0;
+        WHILE j < m DO dName[j] := depName^[j]; INC(j) END;
+        dName[m] := 0X;
+        directDepsArr[i] := combinedTree.GetByName(combinedTree, dName);
+      END;
+      INC(i);
+    UNTIL i = depsList.Count;
+    localDep.AssignDeps(localDep, directDepsArr);
+
+    (* Build display tree: all deps + local project as root (for graph only) *)
+    displayTree := vpkdepTree.Create();
+    i := 0;
+    REPEAT
+      currentDep := vpkdepTree.Get(combinedTree, i);
+      IF currentDep # NIL THEN vpkdepTree.AddCopy(displayTree, currentDep) END;
+      INC(i);
+    UNTIL i = combinedTree.Count;
+    vpkdepTree.Add(displayTree, localDep);
+
     vpkEnv.getGraphName(graphName);
-    lst := vpkDot.tree2dot(combinedTree);
+    lst := vpkDot.tree2dot(displayTree);
     Out.String("dependency graph:"); Out.Ln;
     Out.String("-----------------"); Out.Ln;
     StringList.DumpOut(lst);
@@ -330,9 +349,7 @@ BEGIN
     i := 0;
     REPEAT
       currentDep := vpkdepTree.Get(combinedTree, i);
-      IF currentDep # NIL THEN
-        Out.String(currentDep.name^); Out.Ln;
-      END;
+      IF currentDep # NIL THEN Out.String(currentDep.name^); Out.Ln END;
       INC(i);
     UNTIL i = combinedTree.Count;
   ELSE
