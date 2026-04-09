@@ -1,4 +1,4 @@
-DEPEND = github.com/norayr/unixFileSystem github.com/norayr/strutils github.com/norayr/base64 github.com/norayr/dbg github.com/norayr/Internet github.com/norayr/http github.com/norayr/mbedtls github.com/norayr/lists github.com/norayr/opts github.com/norayr/skprLogger codeberg.org/sts-q/vishaps-ssqJson
+DEPEND = github.com/norayr/unixFileSystem github.com/norayr/strutils github.com/norayr/base64 github.com/norayr/dbg github.com/norayr/Internet github.com/norayr/http github.com/norayr/mbedtls github.com/norayr/lists github.com/norayr/opts github.com/norayr/skprLogger codeberg.org/sts-q/vishaps-ssqJson github.com/norayr/toml
 
 VOC = voc
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
@@ -66,6 +66,8 @@ buildThis:
 	cd $(BUILD) && $(VOC) -s $(mkfile_dir_path)/src/vpkDot.Mod
 	cd $(BUILD) && $(VOC) -s $(mkfile_dir_path)/src/vpkResolver.Mod
 	cd $(BUILD) && $(VOC) -s $(mkfile_dir_path)/src/vpkJsonDepRetriever.Mod
+	cd $(BUILD) && $(VOC) -s $(mkfile_dir_path)/src/vpkTOMLDepRetriever.Mod
+	cd $(BUILD) && $(VOC) -s $(mkfile_dir_path)/src/vpkMetaRetriever.Mod
 	cd $(BUILD) && $(VOC) -s $(mkfile_dir_path)/src/vpkInstaller.Mod
 	cd $(BUILD) && $(VOC) -s $(mkfile_dir_path)/src/vpkLocalBuilder.Mod
 	cd $(BUILD) && $(VOC) $(mkfile_dir_path)/src/vipak.Mod -cm

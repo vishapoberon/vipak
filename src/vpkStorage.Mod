@@ -268,4 +268,92 @@ BEGIN
   END
 END json2pstring;
 
+PROCEDURE findPackageVipakPath*(pkgName, reqVersion: ARRAY OF CHAR; VAR path: ARRAY OF CHAR): BOOLEAN;
+VAR
+  dirPath, fullPath, currentVersion, bestVersion: ARRAY 512 OF CHAR;
+  lst: UnixFS.list;
+  i: INTEGER;
+  found: BOOLEAN;
+  emptyVersion, vipakSuffix: ARRAY 16 OF CHAR;
+  stem, base: ARRAY 512 OF CHAR;
+  pkgPrefix: ARRAY 512 OF CHAR;
+  lp, ls, iv: INTEGER;
+BEGIN
+  COPY("", path);
+  COPY("", bestVersion);
+  COPY("", emptyVersion);
+  COPY(".vipak", vipakSuffix);
+  found := FALSE;
+
+  vpkEnv.getTreeDir(dirPath);
+  Strings.Append("/", dirPath);
+  Strings.Append(pkgName, dirPath);
+
+  IF ~UnixFS.ExistsByName(dirPath) THEN RETURN FALSE END;
+
+  UnixFS.ListDir(dirPath, lst);
+  IF lst = NIL THEN RETURN FALSE END;
+
+  COPY(pkgName, pkgPrefix);
+  Strings.Append("-", pkgPrefix);
+  lp := Strings.Length(pkgPrefix);
+
+  i := 0;
+  WHILE i < LEN(lst^) DO
+    IF (lst^[i].name # ".") & (lst^[i].name # "..") THEN
+      IF EndsWith(lst^[i].name, vipakSuffix) THEN
+        COPY(dirPath, fullPath);
+        Strings.Append("/", fullPath);
+        Strings.Append(lst^[i].name, fullPath);
+        (* Extract version from filename: pkgname-version.vipak *)
+        BaseName(fullPath, base);
+        IF StripSuffix(base, vipakSuffix, stem) THEN
+          ls := Strings.Length(stem);
+          IF ls > lp THEN
+            iv := 0;
+            WHILE iv < lp DO
+              IF stem[iv] # pkgPrefix[iv] THEN iv := lp + 1 END; (* mismatch *)
+              INC(iv)
+            END;
+            IF iv = lp THEN
+              (* prefix matches, remainder is version - copy char by char *)
+              iv := 0;
+              WHILE stem[lp + iv] # 0X DO
+                currentVersion[iv] := stem[lp + iv]; INC(iv)
+              END;
+              currentVersion[iv] := 0X;
+              IF currentVersion # emptyVersion THEN
+                IF reqVersion # emptyVersion THEN
+                  IF currentVersion = reqVersion THEN
+                    COPY(fullPath, path);
+                    RETURN TRUE
+                  END
+                ELSE
+                  IF ~found OR (CompareVersions(bestVersion, currentVersion) < 0) THEN
+                    COPY(currentVersion, bestVersion);
+                    COPY(fullPath, path);
+                    found := TRUE
+                  END
+                END
+              END
+            END
+          END
+        END
+      END
+    END;
+    INC(i)
+  END;
+  RETURN found
+END findPackageVipakPath;
+
+PROCEDURE vipak2pstring*(pkgName, reqVersion: ARRAY OF CHAR; VAR pstr: strUtils.pstring);
+VAR
+  path: ARRAY 512 OF CHAR;
+BEGIN
+  pstr := NIL;
+  IF findPackageVipakPath(pkgName, reqVersion, path) THEN
+    fileToString(path, pstr)
+  END
+END vipak2pstring;
+
 END vpkStorage.

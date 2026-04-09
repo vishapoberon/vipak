@@ -1,7 +1,7 @@
 MODULE vipak;
 IMPORT  Texts, Strings, Oberon, Out,
   vpkConf, vpkLogger, vpkSyncer, vpkInstaller, vpkdepTree, opts, StringList,
-  vpkLocalBuilder;
+  vpkLocalBuilder, vpkMetaRetriever;
 
 PROCEDURE msgnopkg(VAR options: opts.Options);
 BEGIN
@@ -11,7 +11,7 @@ END msgnopkg;
 
 PROCEDURE main;
 VAR
-  deps, sync, fetch, ask, local, init: BOOLEAN;
+  deps, sync, fetch, ask, local, init, toml: BOOLEAN;
   package, prefix, pkgTree, localFile: ARRAY 128 OF CHAR;
 
   options: opts.Options;
@@ -81,6 +81,14 @@ BEGIN
   opts.setOptRequired(opt, FALSE);
   options.add(options, opt);
 
+  opt := opts.createOpt();
+  opts.setOptName(opt, "--toml");
+  opts.setOptLName(opt, "--toml");
+  opts.setOptHasVal(opt, FALSE);
+  opts.setOptDesc(opt, "use .vipak file format instead of JSON");
+  opts.setOptRequired(opt, FALSE);
+  options.add(options, opt);
+
   (* New local build options *)
   opt := opts.createOpt();
   opts.setOptName(opt, "-l");
@@ -110,7 +118,7 @@ BEGIN
 
   COPY("", package); COPY("", prefix); COPY("", pkgTree); COPY("vipak.json", localFile);
   deps := FALSE; sync := FALSE; fetch := FALSE; ask := FALSE;
-  local := FALSE; init := FALSE;
+  local := FALSE; init := FALSE; toml := FALSE;
 
   fopt := opts.createOpt();
   fopt := opts.findOpt("-d", foptions);
@@ -135,6 +143,15 @@ BEGIN
   fopt := opts.createOpt();
   fopt := opts.findOpt("-i", foptions);
   IF fopt # NIL THEN init := TRUE END;
+
+  fopt := opts.createOpt();
+  fopt := opts.findOpt("--toml", foptions);
+  IF fopt # NIL THEN toml := TRUE END;
+
+  IF toml THEN
+    vpkMetaRetriever.SetPreferredFormat(vpkMetaRetriever.fmtToml);
+    COPY("vipak.vipak", localFile)
+  END;
 
   opts.valOfOpt("-p", foptions, package);
   opts.valOfOpt("-P", foptions, prefix);

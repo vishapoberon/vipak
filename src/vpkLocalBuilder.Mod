@@ -1,7 +1,7 @@
 MODULE vpkLocalBuilder;
 IMPORT Files, Out, Strings, Platform,
        Json, StringList, List, strUtils,
-       vpkStorage, vpkSettings, vpkdepTree, vpkEnv, vpkJsonDepRetriever,
+       TOML, vpkStorage, vpkSettings, vpkdepTree, vpkEnv, vpkMetaRetriever,
        vpkResolver, vpkSyncer, vpkDot, vpkTools, UnixFS;
 
 CONST
@@ -243,6 +243,62 @@ BEGIN
   RETURN FALSE;
 END parseProjectFile;
 
+PROCEDURE FileEndsWith(s, suffix: ARRAY OF CHAR): BOOLEAN;
+VAR ls, lf, i: INTEGER;
+BEGIN
+  ls := Strings.Length(s);
+  lf := Strings.Length(suffix);
+  IF lf > ls THEN RETURN FALSE END;
+  i := 0;
+  WHILE i < lf DO
+    IF s[ls - lf + i] # suffix[i] THEN RETURN FALSE END;
+    INC(i)
+  END;
+  RETURN TRUE
+END FileEndsWith;
+
+PROCEDURE parseVipakProjectFile(VAR filename: ARRAY OF CHAR; VAR info: ProjectInfo): BOOLEAN;
+VAR
+  content: strUtils.pstring;
+  doc:     TOML.Doc;
+  sec:     TOML.Section;
+  secName: ARRAY 16 OF CHAR;
+  keyName: ARRAY 16 OF CHAR;
+  val:     ARRAY 64 OF CHAR;
+BEGIN
+  info.hasDeps := FALSE;
+  info.hasBuild := FALSE;
+  COPY("", info.name);
+  COPY("", info.author);
+  COPY("", info.license);
+  COPY("", info.version);
+
+  vpkStorage.fileToString(filename, content);
+  IF content = NIL THEN RETURN FALSE END;
+
+  doc := TOML.Parse(content^);
+
+  COPY("package", secName);
+  sec := TOML.GetSection(doc, secName);
+  IF sec # NIL THEN
+    COPY("name",    keyName); IF TOML.GetField(sec, keyName, val) THEN COPY(val, info.name)    END;
+    COPY("author",  keyName); IF TOML.GetField(sec, keyName, val) THEN COPY(val, info.author)  END;
+    COPY("license", keyName); IF TOML.GetField(sec, keyName, val) THEN COPY(val, info.license) END;
+    COPY("version", keyName); IF TOML.GetField(sec, keyName, val) THEN COPY(val, info.version) END
+  END;
+
+  COPY("deps", secName);
+  sec := TOML.GetSection(doc, secName);
+  IF (sec # NIL) & (sec^.first # NIL) THEN info.hasDeps := TRUE END;
+
+  COPY("build", secName);
+  sec := TOML.GetSection(doc, secName);
+  IF sec # NIL THEN info.hasBuild := TRUE END;
+
+  IF info.name[0] = 0X THEN COPY("myproject", info.name) END;
+  RETURN TRUE
+END parseVipakProjectFile;
+
 PROCEDURE createBuildDir(): BOOLEAN;
 VAR
   fi: UnixFS.fileInfo;
@@ -276,14 +332,14 @@ VAR
 BEGIN
   Out.Ln; Out.String("resolving dependencies for local project..."); Out.Ln;
 
-  vpkJsonDepRetriever.setLocalProjectFile(projectFile);
+  vpkMetaRetriever.setLocalProjectFile(projectFile);
 
   COPY("local-project", projectName);
   localDep := vpkdepTree.CreateDep(projectName);
 
   combinedTree := vpkdepTree.Create();
 
-  IF vpkJsonDepRetriever.getDepsFromFile(localDep, depsList) > 0 THEN
+  IF vpkMetaRetriever.getDepsFromFile(localDep, depsList) > 0 THEN
     Out.String("Found "); Out.Int(depsList.Count, 0); Out.String(" direct dependencies"); Out.Ln;
 
     i := 0;
@@ -291,7 +347,7 @@ BEGIN
       depName := depsList.GetString(depsList, i);
       IF depName # NIL THEN
         Out.String("Resolving: "); Out.String(depName^); Out.Ln;
-        subTree := vpkResolver.resolve(depName^, vpkJsonDepRetriever.getDeps);
+        subTree := vpkResolver.resolve(depName^, vpkMetaRetriever.getDeps);
         j := 0;
         REPEAT
           currentDep := vpkdepTree.Get(subTree, j);
@@ -385,12 +441,12 @@ BEGIN
       currentDep := vpkdepTree.Get(depTree, i);
       IF currentDep # NIL THEN
         Out.String("Fetching: "); Out.String(currentDep.name^); Out.Ln;
-        vpkJsonDepRetriever.getURIandType(currentDep);
+        vpkMetaRetriever.getURIandType(currentDep);
         vpkSyncer.fetch(currentDep, buildDir);
 
         (* Now build the dependency *)
         Out.String("Building dependency: "); Out.String(currentDep.name^); Out.Ln;
-        b := vpkJsonDepRetriever.getBuildInfo(currentDep, keys, values);
+        b := vpkMetaRetriever.getBuildInfo(currentDep, keys, values);
         IF b & (keys # NIL) & (values # NIL) THEN
           Out.String("Build info found for dependency: "); Out.String(currentDep.name^); Out.Ln;
 
@@ -480,7 +536,7 @@ VAR
   res, i: INTEGER;
 BEGIN
   dep := vpkdepTree.CreateDep(info.name);
-  b := vpkJsonDepRetriever.getBuildInfoFromFile(dep, keys, values, projectFile);
+  b := vpkMetaRetriever.getBuildInfoFromFile(dep, keys, values, projectFile);
 
   IF b & (keys # NIL) & (values # NIL) THEN
     Out.String("Building project: "); Out.String(info.name); Out.Ln;
@@ -530,8 +586,12 @@ BEGIN
     HALT(1);
   END;
 
-  (* Parse project file *)
-  b := parseProjectFile(projectFile, info);
+  (* Parse project file - detect format by extension *)
+  IF FileEndsWith(projectFile, ".vipak") THEN
+    b := parseVipakProjectFile(projectFile, info)
+  ELSE
+    b := parseProjectFile(projectFile, info)
+  END;
   IF ~b THEN
     Out.String("Failed to parse project file: "); Out.String(projectFile); Out.Ln;
     HALT(1);

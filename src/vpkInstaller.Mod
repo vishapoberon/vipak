@@ -1,7 +1,7 @@
 MODULE vpkInstaller;
 IMPORT In, Out, Platform, Strings,
        List, StringList,
-       vpkResolver, vpkdepTree, vpkDot, vpkEnv, vpkJsonDepRetriever,vpkSyncer,
+       vpkResolver, vpkdepTree, vpkDot, vpkEnv, vpkMetaRetriever, vpkSyncer,
        vpkTools, vpkSettings;
 
 PROCEDURE resolve*(VAR unit: ARRAY OF CHAR): vpkdepTree.TdepTree;
@@ -14,7 +14,7 @@ VAR
 BEGIN
   vpkEnv.getGraphName(graphName);
   Out.Ln; Out.String("resolving dependencies..."); Out.Ln;
-  tree := vpkResolver.resolve(unit, vpkJsonDepRetriever.getDeps);
+  tree := vpkResolver.resolve(unit, vpkMetaRetriever.getDeps);
   Out.String(" done! (:"); Out.Ln; Out.Ln;
   lst  := vpkDot.tree2dot(tree);
   Out.String("dependency graph:"); Out.Ln;
@@ -61,7 +61,7 @@ BEGIN
   i := 0;
   REPEAT
     dep := vpkdepTree.Get(depTree, i);
-    vpkJsonDepRetriever.getURIandType(dep);
+    vpkMetaRetriever.getURIandType(dep);
     (* Pass build directory instead of prefix *)
     vpkSyncer.fetch(dep, builddir^);
     INC(i)
@@ -91,11 +91,11 @@ BEGIN
   i := 0;
   REPEAT
     dep := vpkdepTree.Get(depTree, i);
-    vpkJsonDepRetriever.getURIandType(dep);
+    vpkMetaRetriever.getURIandType(dep);
     (* Pass build directory instead of prefix *)
     vpkSyncer.fetch(dep, builddir^);
     b := FALSE;
-    b := vpkJsonDepRetriever.getBuildInfo(dep, keys, values);
+    b := vpkMetaRetriever.getBuildInfo(dep, keys, values);
     IF b THEN
       Out.String("Build info found for the package: "); Out.String(dep.name^); Out.Ln;
 
