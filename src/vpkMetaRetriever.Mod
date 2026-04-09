@@ -72,5 +72,5 @@ BEGIN
 END getBuildInfoFromFile;
 
 BEGIN
-  preferredFormat := fmtJson
+  preferredFormat := fmtToml
 END vpkMetaRetriever.
