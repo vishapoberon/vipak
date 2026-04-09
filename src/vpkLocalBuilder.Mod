@@ -5,7 +5,7 @@ IMPORT Files, Out, Strings, Platform,
        vpkResolver, vpkSyncer, vpkDot, vpkTools, UnixFS;
 
 CONST
-  DefaultProjectFile = "vipak.json";
+  DefaultProjectFile = "vipak.vipak";
   DefaultBuildDir = "build";
   ErrmessSize = 4096;
 
@@ -94,53 +94,42 @@ VAR
   r: Files.Rider;
   projectName: ARRAY 64 OF CHAR;
 BEGIN
-  (* Use a simple default project name *)
   COPY("myproject", projectName);
 
-  (* Create default JSON content *)
-  COPY('{', content);
+  COPY("[PACKAGE]", content);
   Strings.Append(eol, content);
-  Strings.Append('    "Package": "', content);
+  Strings.Append("name    = ", content);  Strings.Append(projectName, content);
+  Strings.Append(eol, content);
+  Strings.Append("author  = Your Name", content);
+  Strings.Append(eol, content);
+  Strings.Append("license = GPL-3", content);
+  Strings.Append(eol, content);
+  Strings.Append("version = 0.1.0", content);
+  Strings.Append(eol, content);
+  Strings.Append(eol, content);
+  Strings.Append("[REMOTE]", content);
+  Strings.Append(eol, content);
+  Strings.Append("type = git", content);
+  Strings.Append(eol, content);
+  Strings.Append("uri  = https://codeberg.org/yourname/", content);
   Strings.Append(projectName, content);
-  Strings.Append('",', content);
   Strings.Append(eol, content);
-  Strings.Append('    "Author": "Your Name",', content);
+  Strings.Append("tag  = 0.1.0", content);
   Strings.Append(eol, content);
-  Strings.Append('    "License": "GPL-3",', content);
   Strings.Append(eol, content);
-  Strings.Append('    "Remote": {', content);
+  Strings.Append("[DEPS]", content);
   Strings.Append(eol, content);
-  Strings.Append('        "type": "git",', content);
+  Strings.Append("# add dependencies here, e.g.:", content);
   Strings.Append(eol, content);
-  Strings.Append('        "path": "https://codeberg.org/yourname/', content);
-  Strings.Append(projectName, content);
-  Strings.Append('",', content);
+  Strings.Append("# opts = 0.1.0", content);
   Strings.Append(eol, content);
-  Strings.Append('        "tag": "0.1"', content);
   Strings.Append(eol, content);
-  Strings.Append('    },', content);
+  Strings.Append("[BUILD]", content);
   Strings.Append(eol, content);
-  Strings.Append('    "Dependencies": {', content);
-  Strings.Append(eol, content);
-  Strings.Append('        "opts": "0.1"', content);
-  Strings.Append(eol, content);
-  Strings.Append('    },', content);
-  Strings.Append(eol, content);
-  Strings.Append('    "Build": [', content);
-  Strings.Append(eol, content);
-  Strings.Append('        {', content);
-  Strings.Append(eol, content);
-  Strings.Append('            "Command": "voc -m",', content);
-  Strings.Append(eol, content);
-  Strings.Append('            "File": "src/', content);
+  Strings.Append('run = "voc -m src/', content);
   Strings.Append(projectName, content);
   Strings.Append('.Mod"', content);
   Strings.Append(eol, content);
-  Strings.Append('        }', content);
-  Strings.Append(eol, content);
-  Strings.Append('    ]', content);
-  Strings.Append(eol, content);
-  Strings.Append('}', content);
 
   f := Files.New(filename);
   IF f # NIL THEN

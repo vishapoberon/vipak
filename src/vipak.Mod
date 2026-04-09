@@ -11,7 +11,7 @@ END msgnopkg;
 
 PROCEDURE main;
 VAR
-  deps, sync, fetch, ask, local, init, toml: BOOLEAN;
+  deps, sync, fetch, ask, local, init, json: BOOLEAN;
   package, prefix, pkgTree, localFile: ARRAY 128 OF CHAR;
 
   options: opts.Options;
@@ -82,19 +82,18 @@ BEGIN
   options.add(options, opt);
 
   opt := opts.createOpt();
-  opts.setOptName(opt, "--toml");
-  opts.setOptLName(opt, "--toml");
+  opts.setOptName(opt, "-j");
+  opts.setOptLName(opt, "--json");
   opts.setOptHasVal(opt, FALSE);
-  opts.setOptDesc(opt, "use .vipak file format instead of JSON");
+  opts.setOptDesc(opt, "use JSON format (.json) for package descriptions instead of default .vipak");
   opts.setOptRequired(opt, FALSE);
   options.add(options, opt);
 
-  (* New local build options *)
   opt := opts.createOpt();
   opts.setOptName(opt, "-l");
   opts.setOptLName(opt, "--local");
   opts.setOptHasVal(opt, FALSE);
-  opts.setOptDesc(opt, "build local project from vipak.json file (includes dependencies)");
+  opts.setOptDesc(opt, "build local project from vipak.vipak (or vipak.json with --json)");
   opts.setOptRequired(opt, FALSE);
   options.add(options, opt);
 
@@ -102,7 +101,7 @@ BEGIN
   opts.setOptName(opt, "-i");
   opts.setOptLName(opt, "--init");
   opts.setOptHasVal(opt, FALSE);
-  opts.setOptDesc(opt, "create default vipak.json in current directory");
+  opts.setOptDesc(opt, "create default vipak.vipak project file in current directory");
   opts.setOptRequired(opt, FALSE);
   options.add(options, opt);
 
@@ -116,9 +115,9 @@ BEGIN
   END;
   Out.Ln;
 
-  COPY("", package); COPY("", prefix); COPY("", pkgTree); COPY("vipak.json", localFile);
+  COPY("", package); COPY("", prefix); COPY("", pkgTree); COPY("vipak.vipak", localFile);
   deps := FALSE; sync := FALSE; fetch := FALSE; ask := FALSE;
-  local := FALSE; init := FALSE; toml := FALSE;
+  local := FALSE; init := FALSE; json := FALSE;
 
   fopt := opts.createOpt();
   fopt := opts.findOpt("-d", foptions);
@@ -145,12 +144,11 @@ BEGIN
   IF fopt # NIL THEN init := TRUE END;
 
   fopt := opts.createOpt();
-  fopt := opts.findOpt("--toml", foptions);
-  IF fopt # NIL THEN toml := TRUE END;
-
-  IF toml THEN
-    vpkMetaRetriever.SetPreferredFormat(vpkMetaRetriever.fmtToml);
-    COPY("vipak.vipak", localFile)
+  fopt := opts.findOpt("-j", foptions);
+  IF fopt # NIL THEN
+    json := TRUE;
+    vpkMetaRetriever.SetPreferredFormat(vpkMetaRetriever.fmtJson);
+    COPY("vipak.json", localFile)
   END;
 
   opts.valOfOpt("-p", foptions, package);
